@@ -47,16 +47,18 @@ struct ReaderWindow: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .toolbar {
+            // The same two items whatever the night is doing: a toolbar bridged into an AppKit window
+            // loses its items when their identity changes, so only the label and action change.
             ToolbarItemGroup(placement: .primaryAction) {
-                if reader.running {
-                    Button { reader.stopAfterCall() } label: { Label("Stop after this call", systemImage: "stop.circle") }
-                        .disabled(reader.stopping)
-                        .help("Finish the call in progress, save progress, then stop. Resume later from the same place.")
-                } else {
-                    Button { model.readerView = .night; reader.startNight() } label: { Label(reader.startTitle, systemImage: "moon.fill") }
-                        .disabled(reader.blocker != nil)
-                        .help(reader.blocker?.text ?? "Read everything unread through every lens, then answer the overnight questions")
+                Button {
+                    if reader.running { reader.stopAfterCall() } else { model.readerView = .night; reader.startNight() }
+                } label: {
+                    Label(reader.running ? (reader.stopping ? "Stopping…" : "Stop after this call") : reader.startTitle,
+                          systemImage: reader.running ? "stop.circle" : "moon.fill")
                 }
+                .disabled(reader.running ? reader.stopping : reader.blocker != nil)
+                .help(reader.running ? "Finish the call in progress, save progress, then stop. Resume later from the same place."
+                      : (reader.blocker?.text ?? "Read everything unread through every lens, then answer the overnight questions"))
                 Button { model.showSettings(tab: .reader) } label: { Label("Settings", systemImage: "gearshape") }
                     .help("The model and the budgets (Settings → Reader)")
             }
