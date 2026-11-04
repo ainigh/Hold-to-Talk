@@ -19,7 +19,7 @@ jobs:
   # The harness (the hold gesture, recordings, transcript text, the updater's logic), on Linux
   # (cheap and quick).
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: swift-actions/setup-swift@v2
