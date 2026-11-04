@@ -7,7 +7,6 @@ struct ReaderMorningView: View {
     let model: AppModel
     @State private var question = ""
     @StateObject private var flash = FlashState()
-    @FocusState private var focused: Bool
 
     private var reader: ReaderController { model.reader }
 
@@ -46,10 +45,8 @@ struct ReaderMorningView: View {
                         if reader.chat.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Nothing asked yet. Try one of these, or write your own below.").font(.system(size: 12)).foregroundStyle(.secondary)
-                                FlowRow(spacing: 6) {
-                                    ForEach(Self.suggestions, id: \.self) { s in
-                                        Button(s) { reader.ask(s) }.controlSize(.small).disabled(!canAsk)
-                                    }
+                                ForEach(Self.suggestions, id: \.self) { s in
+                                    Button(s) { reader.ask(s) }.buttonStyle(.link).font(.system(size: 13)).disabled(!canAsk)
                                 }
                             }
                         }
@@ -65,23 +62,16 @@ struct ReaderMorningView: View {
                 .onChange(of: reader.askLive.count) { _, _ in if reader.asking, let last = reader.chat.last { proxy.scrollTo(last.id, anchor: .bottom) } }
             }
             Divider()
-            HStack(alignment: .bottom, spacing: 10) {
-                TextField("Ask anything about what you wrote…", text: $question, axis: .vertical)
-                    .lineLimit(2...8)
+            HStack(spacing: 10) {
+                TextField("Ask anything about what you wrote… (↵ to ask)", text: $question)
                     .textFieldStyle(.roundedBorder)
-                    .focused($focused)
                     .onSubmit { ask() }
-                    .onKeyPress(.escape) { if reader.asking { reader.cancelAsk(); return .handled }; return .ignored }
-                VStack(spacing: 4) {
-                    Button(reader.asking ? "Cancel" : "Ask") { if reader.asking { reader.cancelAsk() } else { ask() } }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!reader.asking && (!canAsk || question.trimmingCharacters(in: .whitespaces).isEmpty))
-                    Text("↵").font(.system(size: 10)).foregroundStyle(.tertiary)
-                }
+                Button(reader.asking ? "Cancel" : "Ask") { if reader.asking { reader.cancelAsk() } else { ask() } }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!reader.asking && (!canAsk || question.trimmingCharacters(in: .whitespaces).isEmpty))
             }
             .padding(16)
         }
-        .onAppear { focused = true }
     }
 
     private var canAsk: Bool { reader.folder != nil && !reader.config.model.isEmpty && !reader.asking }

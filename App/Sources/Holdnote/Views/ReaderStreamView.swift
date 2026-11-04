@@ -198,8 +198,7 @@ struct GapRow: View {
             Text(gap.question).font(.system(size: 13, weight: .medium)).textSelection(.enabled)
             SentenceIds(ids: gap.ids) { model.reader.sentence($0) }
             HStack(alignment: .top, spacing: 8) {
-                TextField("Your answer, in your own words", text: $answer, axis: .vertical)
-                    .lineLimit(1...6)
+                TextField("Your answer, in your own words", text: $answer)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { send(answer) }
                 Button("Use last transcript") {
