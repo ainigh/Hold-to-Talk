@@ -1,6 +1,7 @@
 import AppKit
 import Harness
 import SwiftUI
+import UniformTypeIdentifiers
 
 @main
 struct HoldnoteApp: App {
@@ -21,6 +22,7 @@ struct HoldnoteApp: App {
             CommandMenu("Recording") {
                 Button(model.capture.isListening ? "Stop Voice Detection" : "Start Voice Detection") { model.listening.toggle() }.keyboardShortcut("l", modifiers: [.command, .shift])
                 Button("New Note from Clipboard") { model.pasteText() }.keyboardShortcut("v", modifiers: [.command, .shift])
+                Button("Import Audio Files…") { model.importAudio() }.keyboardShortcut("i", modifiers: [.command, .shift])
                 Button(model.showingAll ? "Show One Recording" : "Show All Text") { model.showingAll.toggle(); model.showWindow() }.keyboardShortcut("a", modifiers: [.command, .shift])
                 Divider()
                 Button("Copy All") { model.copyAll() }.keyboardShortcut("c", modifiers: [.command, .shift])
@@ -337,6 +339,56 @@ final class AppModel {
         pane = .recordings
         selection = [r.id]
         showWindow()
+    }
+
+    /// Audio files from elsewhere (m4a, mp3, wav…) join the list and are transcribed: the ones
+    /// given (dropped on the window), or the ones chosen in a panel. The last one is selected.
+    func importAudio(_ urls: [URL]? = nil) {
+        let chosen: [URL]
+        if let urls {
+            chosen = urls
+        } else {
+            let panel = NSOpenPanel()
+            panel.allowedContentTypes = [.audio]
+            panel.allowsMultipleSelection = true
+            panel.canChooseDirectories = false
+            panel.prompt = "Import"
+            panel.message = "Each file joins the list as a recording and is transcribed on this Mac."
+            NSApp.activate()
+            guard panel.runModal() == .OK else { return }
+            chosen = panel.urls
+        }
+        var problems: [String] = []
+        var last: Recording?
+        for url in chosen {
+            do { last = try library.importAudio(url) } catch { problems.append(error.localizedDescription) }
+        }
+        if let last {
+            showingAll = false
+            pane = .recordings
+            selection = [last.id]
+            showWindow()
+        }
+        if !problems.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = problems.count == 1 ? "Could not import the file" : "Could not import \(problems.count) files"
+            alert.informativeText = problems.joined(separator: "\n")
+            alert.runModal()
+        }
+    }
+
+    /// File URLs dragged in: the audio files among them are imported. Says whether any were.
+    func importDropped(_ providers: [NSItemProvider]) -> Bool {
+        let audio = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
+        guard !audio.isEmpty else { return false }
+        for p in audio {
+            p.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
+                guard let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil),
+                      let type = UTType(filenameExtension: url.pathExtension), type.conforms(to: .audio) else { return }
+                Task { @MainActor in AppModel.shared.importAudio([url]) }
+            }
+        }
+        return true
     }
 
     /// Every listed transcript as one text, exactly what Copy All copies.

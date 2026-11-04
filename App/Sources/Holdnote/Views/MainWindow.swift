@@ -1,6 +1,7 @@
 import AppKit
 import Harness
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The one window: the sidebar on the left holds the reader's four views (Stream, Night, Morning,
 /// Notes) and then the recordings; the right pane shows whichever is chosen, the transcript of the
@@ -38,6 +39,8 @@ struct MainWindow: View {
                         .help("Every transcript in the list as one continuous text (⌘⇧A). Select all and copy, or Copy All.")
                     Button { model.pasteText() } label: { Label("Paste", systemImage: "doc.on.clipboard") }
                         .help("The clipboard's text as a new note (⌘⇧V)")
+                    Button { model.importAudio() } label: { Label("Import", systemImage: "square.and.arrow.down") }
+                        .help("Audio files (m4a, mp3, wav…) join the list and are transcribed (⌘⇧I). Or drop them on the window.")
                     Button { model.copyAll() } label: { Label("Copy All", systemImage: "doc.on.doc") }
                         .help("Copy every transcript in the list, newest first (⌘⇧C)")
                         .disabled(model.listed.isEmpty)
@@ -65,6 +68,8 @@ struct MainWindow: View {
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: model.library.pendingDeletes.count)
+        // Audio files dropped anywhere on the window are imported (the stream's own drop zone, deeper in, keeps text files).
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in model.importDropped(providers) }
         .frame(minWidth: 860, minHeight: 520)
         .onAppear { reader.refreshStream(); reader.refreshFiles() }
         .onChange(of: model.library.recordings.count) { _, _ in reader.libraryChanged() }
@@ -121,6 +126,9 @@ struct EmptyState: View {
             }
             .font(.system(size: 15))
             Text("Double-tap it to record hands-free; tap once to stop. Or turn on Voice Detection and just talk.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            Text("Audio files from elsewhere (an m4a from Voice Memos, say) can be dropped here, or imported with ⌘⇧I.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }
