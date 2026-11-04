@@ -91,6 +91,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         if model.capture.isRecording {
             add("Stop Recording", to: menu) { $0.capture.stopFromMenu() }
         }
+        add("New Note from Clipboard", to: menu) { $0.pasteText() }
         menu.addItem(.separator())
         let mics = submenu("Microphone", in: menu)
         let chosen = model.settings.settings.inputDeviceID

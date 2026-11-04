@@ -94,6 +94,18 @@ final class Library {
         enqueue(id, appendTo: appendTo)
     }
 
+    /// Pasted text becomes a note in the list: no audio, final from the start, titled by its
+    /// first words like any recording. Returns it (nil for blank text).
+    @discardableResult
+    func addText(_ text: String) -> Recording? {
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return nil }
+        let r = Recording(sourceDevice: "Pasted text", machineText: body, text: body, status: .final)
+        recordings.insert(r, at: 0)
+        try? store.save(r)
+        return r
+    }
+
     /// The recording was an accident: gone without a trace.
     func discard(_ id: UUID) {
         guard let i = index(id) else { return }

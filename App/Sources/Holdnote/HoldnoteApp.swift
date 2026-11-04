@@ -19,6 +19,9 @@ struct HoldnoteApp: App {
                 Button("Settings…") { model.showSettings() }.keyboardShortcut(",", modifiers: .command)
             }
             CommandMenu("Recording") {
+                Button("New Note from Clipboard") { model.pasteText() }.keyboardShortcut("v", modifiers: [.command, .shift])
+                Button(model.showingAll ? "Show One Recording" : "Show All Text") { model.showingAll.toggle(); model.showWindow() }.keyboardShortcut("a", modifiers: [.command, .shift])
+                Divider()
                 Button("Copy All") { model.copyAll() }.keyboardShortcut("c", modifiers: [.command, .shift])
                 Button("Copy Transcript") { model.copySelected() }.keyboardShortcut("c", modifiers: [.command, .option])
                 Button("Re-transcribe") { model.retranscribeSelected() }.keyboardShortcut("r", modifiers: [.command, .shift])
@@ -72,6 +75,8 @@ final class AppModel {
     /// The window's selection (ids), shared with the menus and ⌥+hotkey.
     var selection: Set<UUID> = []
     var searchText = ""
+    /// The right pane shows every listed transcript as one continuous text.
+    var showingAll = false
     /// Bumped to put the cursor in the search field.
     var searchRequests = 0
     @ObservationIgnored private var statusBar: StatusBarController?
@@ -243,6 +248,20 @@ final class AppModel {
         library.delete(selection)
         selection = []
     }
+
+    /// The clipboard's text as a new note, selected.
+    func pasteText() {
+        guard let text = NSPasteboard.general.string(forType: .string), let r = library.addText(text) else {
+            NSSound.beep()
+            return
+        }
+        showingAll = false
+        selection = [r.id]
+        showWindow()
+    }
+
+    /// Every listed transcript as one text, exactly what Copy All copies.
+    var allText: String { TranscriptText.copyAll(listed, headers: settings.settings.copyAllHeaders) }
 
     func focusSearch() {
         showWindow()
