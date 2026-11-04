@@ -5,11 +5,9 @@ import SwiftUI
 /// writing as it writes it, the log) and the lenses.
 struct ReaderNightView: View {
     @Bindable var model: AppModel
-    let go: (ReaderWindow.ReaderView) -> Void
+    let go: (ReaderView) -> Void
     @State private var showPrompt = false
     @State private var showLog = false
-    @State private var confirmClear = false
-    @State private var confirmReset = false
 
     private var reader: ReaderController { model.reader }
 
@@ -22,16 +20,10 @@ struct ReaderNightView: View {
                         .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 runCard
-                LensList(model: model, confirmReset: $confirmReset)
+                LensList(model: model)
             }
             .padding(24)
             .frame(maxWidth: 760, alignment: .leading)
-        }
-        .confirmationDialog("Delete progress.json so the next run reads the whole stream again from the start? Note files are kept until overwritten.", isPresented: $confirmClear, titleVisibility: .visible) {
-            Button("Clear progress", role: .destructive) { reader.clearProgress() }
-        }
-        .confirmationDialog("Replace all lenses with the defaults? Your edits to lens instructions will be lost.", isPresented: $confirmReset, titleVisibility: .visible) {
-            Button("Restore defaults", role: .destructive) { reader.resetLenses() }
         }
     }
 
@@ -77,7 +69,9 @@ struct ReaderNightView: View {
                 Toggle("Keep the Mac awake while reading", isOn: Binding(get: { reader.config.keepAwake }, set: { reader.config.keepAwake = $0 }))
                     .font(.system(size: 12))
                 Spacer()
-                Button("Clear progress") { confirmClear = true }
+                Button("Clear progress") {
+                    confirm("Clear the night's progress?", detail: "progress.json is deleted, so the next run reads the whole stream again from the start. Note files are kept until overwritten.", button: "Clear progress") { reader.clearProgress() }
+                }
                     .controlSize(.small)
                     .disabled(reader.running || reader.folder == nil)
                     .help("Forget what has been read so the next night starts from the first sentence")
@@ -223,7 +217,6 @@ struct ReaderNightView: View {
 /// The lenses, each a disclosure with its instructions (the model sees them verbatim).
 struct LensList: View {
     @Bindable var model: AppModel
-    @Binding var confirmReset: Bool
     @State private var open: Set<String> = []
 
     private var reader: ReaderController { model.reader }
@@ -233,7 +226,10 @@ struct LensList: View {
             HStack {
                 Spacer()
                 Button("Add a lens") { let id = reader.addLens(); open.insert(id) }.controlSize(.small)
-                Button("Restore defaults") { confirmReset = true }.controlSize(.small)
+                Button("Restore defaults") {
+                    confirm("Replace all lenses with the defaults?", detail: "Your edits to lens instructions will be lost.", button: "Restore defaults") { reader.resetLenses() }
+                }
+                .controlSize(.small)
             }
             ForEach(Array(reader.lenses.enumerated()), id: \.element.id) { idx, lens in
                 LensRow(model: model, lens: lens, index: idx, isOpen: open.contains(lens.id)) { on in
@@ -250,7 +246,6 @@ struct LensRow: View {
     let index: Int
     let isOpen: Bool
     let setOpen: (Bool) -> Void
-    @State private var confirmDelete = false
 
     private var reader: ReaderController { model.reader }
 
@@ -279,7 +274,10 @@ struct LensRow: View {
                 .buttonStyle(.plain)
                 Button { reader.move(lens.id, by: -1) } label: { Image(systemName: "arrow.up") }.buttonStyle(.borderless).disabled(index == 0).help("Move up")
                 Button { reader.move(lens.id, by: 1) } label: { Image(systemName: "arrow.down") }.buttonStyle(.borderless).disabled(index == reader.lenses.count - 1).help("Move down")
-                Button { if lens.instructions.trimmingCharacters(in: .whitespaces).isEmpty { reader.removeLens(lens.id) } else { confirmDelete = true } } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).help("Remove this lens")
+                Button {
+                    if lens.instructions.trimmingCharacters(in: .whitespaces).isEmpty { reader.removeLens(lens.id) }
+                    else { confirm("Remove the lens “\(lens.title)”?", detail: "Its notes file stays in the folder.", button: "Remove") { reader.removeLens(lens.id) } }
+                } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).help("Remove this lens")
             }
             if isOpen {
                 VStack(alignment: .leading, spacing: 8) {
@@ -308,9 +306,6 @@ struct LensRow: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(lens.on ? 0.4 : 0.2)))
-        .confirmationDialog("Remove the lens “\(lens.title)”? Its notes file stays in the folder.", isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button("Remove", role: .destructive) { reader.removeLens(lens.id) }
-        }
     }
 
     private func badge(_ text: String, _ color: Color) -> some View {

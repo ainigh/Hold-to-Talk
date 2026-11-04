@@ -91,8 +91,13 @@ final class AppModel {
     let monitor = SystemMonitor()
     /// The reader: the stream, the night, the morning, the notes.
     let reader = ReaderController()
-    /// Which of the reader window's views is showing.
-    var readerView: ReaderWindow.ReaderView = .stream
+    /// What the window's right pane shows: the selected recording, or one of the reader's views.
+    enum Pane: Hashable { case recordings, reader(ReaderView) }
+    var pane: Pane = .recordings {
+        didSet { if case let .reader(v) = pane { readerView = v } }
+    }
+    /// The reader view last shown, where "Open the Reader" goes.
+    var readerView: ReaderView = .stream
     /// Which settings tab is showing.
     var settingsTab: SettingsTab = .general
     /// Set by the updater, which quits to swap the app.
@@ -101,14 +106,15 @@ final class AppModel {
     var selection: Set<UUID> = []
     var searchText = ""
     /// The right pane shows every listed transcript as one continuous text.
-    var showingAll = false
+    var showingAll = false {
+        didSet { if showingAll { pane = .recordings } }
+    }
     /// Bumped to put the cursor in the search field.
     var searchRequests = 0
     @ObservationIgnored private var statusBar: StatusBarController?
     @ObservationIgnored private var window: NSWindow?
     @ObservationIgnored private var settingsWindow: NSWindow?
     @ObservationIgnored private var setupWindow: NSWindow?
-    @ObservationIgnored private var readerWindow: NSWindow?
     @ObservationIgnored private var aboutWindow: NSWindow?
 
     init() {
@@ -153,7 +159,7 @@ final class AppModel {
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] note in
             MainActor.assumeIsolated {
                 guard let self, let closing = note.object as? NSWindow else { return }
-                let open = [self.window, self.settingsWindow, self.setupWindow, self.readerWindow, self.aboutWindow].compactMap { $0 }.filter { $0 !== closing && $0.isVisible }
+                let open = [self.window, self.settingsWindow, self.setupWindow, self.aboutWindow].compactMap { $0 }.filter { $0 !== closing && $0.isVisible }
                 if open.isEmpty { _ = NSApp.setActivationPolicy(.accessory) }
             }
         }
@@ -204,7 +210,7 @@ final class AppModel {
     }
 
     private func makeWindow() -> NSWindow {
-        let hosting = NSHostingController(rootView: MainWindow(model: self).frame(minWidth: 720, minHeight: 440))
+        let hosting = NSHostingController(rootView: MainWindow(model: self).frame(minWidth: 860, minHeight: 520))
         hosting.sceneBridgingOptions = [.title, .toolbars]
         let window = NSWindow(contentViewController: hosting)
         window.identifier = NSUserInterfaceItemIdentifier("main")
@@ -212,9 +218,16 @@ final class AppModel {
         window.titleVisibility = .hidden
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 960, height: 620))
+        window.setContentSize(NSSize(width: 1080, height: 700))
         window.center()
         window.setFrameAutosaveName("Holdnote.main")
+        // A frame saved by an older, smaller window is grown to what the sidebar and the reader need.
+        let least = NSSize(width: 860, height: 520)
+        window.contentMinSize = least
+        let now = window.contentRect(forFrameRect: window.frame).size
+        if now.width < least.width || now.height < least.height {
+            window.setContentSize(NSSize(width: max(now.width, least.width), height: max(now.height, least.height)))
+        }
         self.window = window
         return window
     }
@@ -238,26 +251,11 @@ final class AppModel {
         window.makeKeyAndOrderFront(nil)
     }
 
-    /// The reader's window, on the view asked for (or the one it was on).
-    func showReader(_ view: ReaderWindow.ReaderView? = nil) {
+    /// The window, on the reader view asked for (or the one it was last on).
+    func showReader(_ view: ReaderView? = nil) {
         if let view { readerView = view }
-        let window = readerWindow ?? {
-            let hosting = NSHostingController(rootView: ReaderWindow(model: self).frame(minWidth: 860, minHeight: 560))
-            hosting.sceneBridgingOptions = [.title, .toolbars]
-            let w = NSWindow(contentViewController: hosting)
-            w.identifier = NSUserInterfaceItemIdentifier("reader")
-            w.title = "Holdnote Reader"
-            w.toolbarStyle = .unified
-            w.isReleasedWhenClosed = false
-            w.setContentSize(NSSize(width: 1120, height: 760))
-            w.center()
-            w.setFrameAutosaveName("Holdnote.reader")
-            readerWindow = w
-            return w
-        }()
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
+        pane = .reader(readerView)
+        showWindow()
     }
 
     /// What the reader does and why, from the extension's spec.
@@ -336,6 +334,7 @@ final class AppModel {
             return
         }
         showingAll = false
+        pane = .recordings
         selection = [r.id]
         showWindow()
     }
@@ -344,6 +343,7 @@ final class AppModel {
     var allText: String { TranscriptText.copyAll(listed, headers: settings.settings.copyAllHeaders) }
 
     func focusSearch() {
+        pane = .recordings
         showWindow()
         searchRequests += 1
     }

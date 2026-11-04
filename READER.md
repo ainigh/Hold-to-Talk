@@ -74,7 +74,7 @@ Cost per night is roughly (number of lenses) × (new tokens ÷ window tokens) mo
 - The ledger pass validates itself: sentences with no ledger line are reported in the log.
 - Entries citing ids that do not exist are dropped, and the drop is logged.
 - The morning model answers in the second person and may not ask you questions back. If it cites an id it never read, the id is shown with a question mark.
-- Progress is saved after every window, so quitting the app or a crash resumes where it stopped. The night runs in the background: the reader window can be closed, and the menu bar icon shows a moon while it reads.
+- Progress is saved after every window, so quitting the app or a crash resumes where it stopped. The night runs in the background: the window can be closed, and the menu bar icon shows a moon while it reads.
 - The night can start by itself at a time of day (Settings → Reader), when there is something new to read and Ollama answers. The Mac has to be awake at that moment; once a night runs it keeps the Mac awake until it is done.
 - Thinking is off by default: thinking models (qwen3, deepseek-r1, gpt-oss) otherwise spend the output cap on hidden reasoning. Settings → Reader has a switch to let the model think.
 

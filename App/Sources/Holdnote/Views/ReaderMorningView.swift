@@ -6,7 +6,6 @@ import SwiftUI
 struct ReaderMorningView: View {
     let model: AppModel
     @State private var question = ""
-    @State private var confirmClear = false
     @StateObject private var flash = FlashState()
     @FocusState private var focused: Bool
 
@@ -30,7 +29,12 @@ struct ReaderMorningView: View {
                     Text(stateLine).font(.system(size: 11)).foregroundStyle(.secondary)
                     Spacer()
                     Flash(text: flash.text)
-                    if !reader.chat.isEmpty { Button("Clear conversation") { confirmClear = true }.buttonStyle(.link).font(.system(size: 11)) }
+                    if !reader.chat.isEmpty {
+                        Button("Clear conversation") {
+                            confirm("Clear this conversation?", detail: "Flags already written to corrections.md are kept.", button: "Clear") { reader.clearChat() }
+                        }
+                        .buttonStyle(.link).font(.system(size: 11))
+                    }
                 }
             }
             .padding(24)
@@ -78,9 +82,6 @@ struct ReaderMorningView: View {
             .padding(16)
         }
         .onAppear { focused = true }
-        .confirmationDialog("Clear this conversation? Flags already written to corrections.md are kept.", isPresented: $confirmClear, titleVisibility: .visible) {
-            Button("Clear", role: .destructive) { reader.clearChat() }
-        }
     }
 
     private var canAsk: Bool { reader.folder != nil && !reader.config.model.isEmpty && !reader.asking }

@@ -2,20 +2,27 @@ import AppKit
 import Harness
 import SwiftUI
 
-/// Two panes: the recordings on the left, the selected one's transcript on the right.
+/// The one window: the sidebar on the left holds the reader's four views (Stream, Night, Morning,
+/// Notes) and then the recordings; the right pane shows whichever is chosen, the transcript of the
+/// selected recording by default.
 struct MainWindow: View {
     @Bindable var model: AppModel
+
+    private var reader: ReaderController { model.reader }
 
     var body: some View {
         VStack(spacing: 0) {
             NavigationSplitView {
-                RecordingList(model: model)
+                Sidebar(model: model)
                     .navigationSplitViewColumnWidth(min: 280, ideal: 320)
             } detail: {
                 detail
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search transcripts")
             .toolbar {
+                // The same items whatever is showing: a toolbar bridged into an AppKit window
+                // loses items whose identity changes, so only labels, actions and enabling vary.
                 ToolbarItem(placement: .navigation) {
                     Toggle(isOn: $model.listening) {
                         Label(model.capture.isListening ? (model.capture.isSpeaking ? "Hearing you…" : "Listening") : "Voice Detection",
@@ -34,6 +41,15 @@ struct MainWindow: View {
                     Button { model.copyAll() } label: { Label("Copy All", systemImage: "doc.on.doc") }
                         .help("Copy every transcript in the list, newest first (⌘⇧C)")
                         .disabled(model.listed.isEmpty)
+                    Button {
+                        if reader.running { reader.stopAfterCall() } else { model.showReader(.night); reader.startNight() }
+                    } label: {
+                        Label(reader.running ? (reader.stopping ? "Stopping…" : "Stop after this call") : reader.startTitle,
+                              systemImage: reader.running ? "stop.circle" : "moon.fill")
+                    }
+                    .disabled(reader.running ? reader.stopping : reader.blocker != nil)
+                    .help(reader.running ? "Finish the call in progress, save progress, then stop. Resume later from the same place."
+                          : (reader.blocker?.text ?? "The reader: read everything unread through every lens, then answer the overnight questions"))
                     Button { model.showSettings() } label: { Label("Settings", systemImage: "gearshape") }
                         .help("Settings (⌘,)")
                 }
@@ -49,11 +65,26 @@ struct MainWindow: View {
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: model.library.pendingDeletes.count)
-        .frame(minWidth: 720, minHeight: 440)
+        .frame(minWidth: 860, minHeight: 520)
+        .onAppear { reader.refreshStream(); reader.refreshFiles() }
+        .onChange(of: model.library.recordings.count) { _, _ in reader.libraryChanged() }
+        // Typing in the search field is about the recordings.
+        .onChange(of: model.searchText) { _, new in if !new.isEmpty, model.pane != .recordings { model.pane = .recordings } }
     }
 
     @ViewBuilder
     private var detail: some View {
+        switch model.pane {
+        case .reader(.stream): ReaderStreamView(model: model, go: { model.showReader($0) })
+        case .reader(.night): ReaderNightView(model: model, go: { model.showReader($0) })
+        case .reader(.morning): ReaderMorningView(model: model)
+        case .reader(.notes): ReaderNotesView(model: model)
+        case .recordings: recordings
+        }
+    }
+
+    @ViewBuilder
+    private var recordings: some View {
         let selected = model.selectedRecordings
         if model.showingAll, !model.listed.isEmpty {
             AllTextView(model: model)
