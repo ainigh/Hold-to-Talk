@@ -19,7 +19,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         super.init()
         menu.delegate = self
         menu.autoenablesItems = false
-        item.button?.toolTip = "Holdnote: hold \(model.settings.settings.hotkey.glyph) to record. Click for the menu, ⌥-click to open the window."
+        item.button?.toolTip = "Holdnote: hold \(model.settings.settings.hotkey.glyph) to record. Click for the menu, ⌥-click to open the window. ⌘⇧N opens the reader."
         item.button?.target = self
         item.button?.action = #selector(clicked)
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -28,15 +28,16 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     /// Redrawn whenever what it shows changes.
     private func refreshIcon() {
-        let (recording, transcribing, update, warning) = withObservationTracking {
+        let (recording, transcribing, update, warning, reading) = withObservationTracking {
             (model.capture.isRecording, model.library.transcribing != nil, model.updater.available != nil,
-             !model.capture.hotkeyRunning || model.capture.paused)
+             !model.capture.hotkeyRunning || model.capture.paused, model.reader.running)
         } onChange: { [weak self] in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.refreshIcon() } }
         }
         let symbol: String
         if recording { symbol = "record.circle.fill" }
         else if transcribing { symbol = "waveform.badge.magnifyingglass" }
+        else if reading { symbol = "moon.fill" }
         else if update { symbol = "arrow.down.circle" }
         else if warning { symbol = "waveform.slash" }
         else { symbol = "waveform" }
@@ -92,6 +93,23 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             add("Stop Recording", to: menu) { $0.capture.stopFromMenu() }
         }
         add("New Note from Clipboard", to: menu) { $0.pasteText() }
+        menu.addItem(.separator())
+        // The reader: open it, start or stop the night, and how far it is.
+        add("Open the Reader", key: "n", to: menu) { $0.showReader() }.keyEquivalentModifierMask = [.command, .shift]
+        let reader = model.reader
+        if reader.running {
+            note("Reading · \(reader.percent)%\(reader.status.isEmpty ? "" : " · " + reader.status)", in: menu)
+            let stop = add(reader.stopping ? "Stopping…" : "Stop the Night After This Call", to: menu) { $0.reader.stopAfterCall() }
+            stop.isEnabled = !reader.stopping
+        } else {
+            let start = add(reader.startTitle, to: menu) { $0.showReader(.night); $0.reader.startNight() }
+            start.isEnabled = reader.blocker == nil
+            if let g = reader.gaps, !g.open.isEmpty {
+                add("\(g.open.count) question\(g.open.count == 1 ? "" : "s") for you…", to: menu) { $0.showReader(.stream) }
+            } else if reader.hasNotes {
+                add("Ask About the Stream…", to: menu) { $0.showReader(.morning) }
+            }
+        }
         menu.addItem(.separator())
         let mics = submenu("Microphone", in: menu)
         let chosen = model.settings.settings.inputDeviceID

@@ -38,6 +38,24 @@ struct HoldnoteApp: App {
                 }
                 Button("Show Holdnote folder in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.library.store.root]) }
             }
+            CommandMenu("Reader") {
+                Button("Open the Reader") { model.showReader() }.keyboardShortcut("n", modifiers: [.command, .shift])
+                Button("Stream") { model.showReader(.stream) }
+                Button("Night") { model.showReader(.night) }
+                Button("Morning") { model.showReader(.morning) }
+                Button("Notes") { model.showReader(.notes) }
+                Divider()
+                if model.reader.running {
+                    Button("Stop the Night After This Call") { model.reader.stopAfterCall() }.disabled(model.reader.stopping)
+                    Button("Stop the Night Now") { model.reader.stopNow() }
+                } else {
+                    Button(model.reader.startTitle) { model.showReader(.night); model.reader.startNight() }.disabled(model.reader.blocker != nil)
+                }
+                Button("Add Transcripts to the Stream") { _ = model.reader.feedTranscripts() }.disabled(model.reader.running)
+                Divider()
+                Button("Show Reader Folder in Finder") { model.reader.showFolderInFinder() }
+                Button("About the Reader…") { model.showReaderAbout() }
+            }
             CommandGroup(after: .toolbar) {
                 Button("Setup…") { model.showSetup() }
             }
@@ -70,6 +88,12 @@ final class AppModel {
     let updater = Updater()
     /// CPU and memory, the Mac's and Holdnote's share, for the window's bottom bar and the menu.
     let monitor = SystemMonitor()
+    /// The reader: the stream, the night, the morning, the notes.
+    let reader = ReaderController()
+    /// Which of the reader window's views is showing.
+    var readerView: ReaderWindow.ReaderView = .stream
+    /// Which settings tab is showing.
+    var settingsTab: SettingsTab = .general
     /// Set by the updater, which quits to swap the app.
     @ObservationIgnored var quittingForUpdate = false
     /// The window's selection (ids), shared with the menus and ⌥+hotkey.
@@ -83,6 +107,8 @@ final class AppModel {
     @ObservationIgnored private var window: NSWindow?
     @ObservationIgnored private var settingsWindow: NSWindow?
     @ObservationIgnored private var setupWindow: NSWindow?
+    @ObservationIgnored private var readerWindow: NSWindow?
+    @ObservationIgnored private var aboutWindow: NSWindow?
 
     init() {
         let store: RecordingStore
@@ -96,6 +122,7 @@ final class AppModel {
         library = Library(store: store)
         capture = CaptureController(library: library, settings: settings)
         library.settings = { [settings] in settings.settings }
+        reader.recordings = { [library] in library.recordings }
     }
 
     /// Once the app has launched.
@@ -119,12 +146,13 @@ final class AppModel {
             return id
         }
         capture.start()
+        reader.start()
         if !isSetUp { showSetup() }
         // Closing the window puts the app back in the menu bar only (no Dock icon).
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] note in
             MainActor.assumeIsolated {
                 guard let self, let closing = note.object as? NSWindow else { return }
-                let open = [self.window, self.settingsWindow, self.setupWindow].compactMap { $0 }.filter { $0 !== closing && $0.isVisible }
+                let open = [self.window, self.settingsWindow, self.setupWindow, self.readerWindow, self.aboutWindow].compactMap { $0 }.filter { $0 !== closing && $0.isVisible }
                 if open.isEmpty { _ = NSApp.setActivationPolicy(.accessory) }
             }
         }
@@ -134,6 +162,8 @@ final class AppModel {
         library.saveNow()
         library.commitDeletes()
         capture.interrupt(reason: nil)
+        // The night saves after every window; cutting the call short loses only that window.
+        reader.stopNow()
     }
 
     /// Everything the hotkey needs is in place.
@@ -181,7 +211,8 @@ final class AppModel {
         return window
     }
 
-    func showSettings() {
+    func showSettings(tab: SettingsTab? = nil) {
+        if let tab { settingsTab = tab }
         let window = settingsWindow ?? {
             let hosting = NSHostingController(rootView: SettingsView(model: self))
             let w = NSWindow(contentViewController: hosting)
@@ -189,9 +220,50 @@ final class AppModel {
             w.title = "Holdnote Settings"
             w.styleMask = [.titled, .closable]
             w.isReleasedWhenClosed = false
-            w.setContentSize(NSSize(width: 520, height: 420))
+            w.setContentSize(NSSize(width: 560, height: 560))
             w.center()
             settingsWindow = w
+            return w
+        }()
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    /// The reader's window, on the view asked for (or the one it was on).
+    func showReader(_ view: ReaderWindow.ReaderView? = nil) {
+        if let view { readerView = view }
+        let window = readerWindow ?? {
+            let hosting = NSHostingController(rootView: ReaderWindow(model: self).frame(minWidth: 860, minHeight: 560))
+            hosting.sceneBridgingOptions = [.title, .toolbars]
+            let w = NSWindow(contentViewController: hosting)
+            w.identifier = NSUserInterfaceItemIdentifier("reader")
+            w.title = "Holdnote Reader"
+            w.toolbarStyle = .unified
+            w.isReleasedWhenClosed = false
+            w.setContentSize(NSSize(width: 1120, height: 760))
+            w.center()
+            w.setFrameAutosaveName("Holdnote.reader")
+            readerWindow = w
+            return w
+        }()
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    /// What the reader does and why, from the extension's spec.
+    func showReaderAbout() {
+        let window = aboutWindow ?? {
+            let hosting = NSHostingController(rootView: ReaderAboutView())
+            let w = NSWindow(contentViewController: hosting)
+            w.identifier = NSUserInterfaceItemIdentifier("reader-about")
+            w.title = "About the Reader"
+            w.styleMask = [.titled, .closable, .resizable]
+            w.isReleasedWhenClosed = false
+            w.setContentSize(NSSize(width: 680, height: 640))
+            w.center()
+            aboutWindow = w
             return w
         }()
         NSApp.setActivationPolicy(.regular)
