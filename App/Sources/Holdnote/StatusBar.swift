@@ -30,7 +30,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private func refreshIcon() {
         let (recording, transcribing, update, warning) = withObservationTracking {
             (model.capture.isRecording, model.library.transcribing != nil, model.updater.available != nil,
-             !model.capture.monitor.isRunning || model.capture.paused)
+             !model.capture.hotkeyRunning || model.capture.paused)
         } onChange: { [weak self] in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.refreshIcon() } }
         }
@@ -78,7 +78,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        if !model.capture.monitor.isRunning {
+        if !model.capture.hotkeyRunning {
             add("Re-enable the hotkey…", to: menu) { $0.showSetup() }
             menu.addItem(.separator())
         } else if !model.isSetUp {

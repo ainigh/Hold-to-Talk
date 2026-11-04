@@ -95,7 +95,7 @@ struct SetupView: View {
         inputAllowed = HotkeyMonitor.isAllowed
         fnUsage = Permissions.fnUsage()
         hasModel = model.library.transcriber.hasModel(model.settings.settings.model)
-        if inputAllowed, !model.capture.monitor.isRunning { model.capture.start() }
+        if inputAllowed, !model.capture.hotkeyRunning { model.capture.start() }
     }
 
     private func download() {

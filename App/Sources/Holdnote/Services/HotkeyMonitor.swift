@@ -29,18 +29,18 @@ final class HotkeyMonitor {
     /// Whether the tap is running. False until Input Monitoring is allowed.
     private(set) var isRunning = false
 
-    static let fnKeyCode: Int64 = 63
-    static let rightOptionKeyCode: Int64 = 61
-    static let spaceKeyCode: Int64 = 49
-    static let hKeyCode: Int64 = 4
+    nonisolated static let fnKeyCode: Int64 = 63
+    nonisolated static let rightOptionKeyCode: Int64 = 61
+    nonisolated static let spaceKeyCode: Int64 = 49
+    nonisolated static let hKeyCode: Int64 = 4
 
     /// Input Monitoring: already allowed?
-    static var isAllowed: Bool { CGPreflightListenEventAccess() }
+    nonisolated static var isAllowed: Bool { CGPreflightListenEventAccess() }
 
     /// Asks macOS for Input Monitoring (shows the system prompt the first time; later the user
     /// turns it on in System Settings, which the setup window opens).
     @discardableResult
-    static func request() -> Bool { CGRequestListenEventAccess() }
+    nonisolated static func request() -> Bool { CGRequestListenEventAccess() }
 
     /// Starts the tap. False when Input Monitoring isn't allowed yet (try again after it is).
     @discardableResult
@@ -74,7 +74,7 @@ final class HotkeyMonitor {
     func forgetPress() { down = false }
 
     /// A C callback: no captures, the monitor comes through `refcon`.
-    private static let callback: CGEventTapCallBack = { _, type, event, refcon in
+    nonisolated private static let callback: CGEventTapCallBack = { _, type, event, refcon in
         guard let refcon else { return Unmanaged.passUnretained(event) }
         let monitor = Unmanaged<HotkeyMonitor>.fromOpaque(refcon).takeUnretainedValue()
         MainActor.assumeIsolated { monitor.handle(type: type, event: event) }

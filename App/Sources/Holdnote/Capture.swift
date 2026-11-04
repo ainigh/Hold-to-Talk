@@ -20,11 +20,12 @@ final class CaptureController {
     /// The window's selection when exactly one recording is selected: ⌥+hotkey appends to it.
     @ObservationIgnored var selectedForAppend: () -> UUID? = { nil }
     private(set) var isRecording = false
-    /// Pause hotkey (the menu).
-    var paused: Bool {
-        get { monitor.paused }
-        set { monitor.paused = newValue }
+    /// Pause hotkey (the menu). Observable here; the monitor is told.
+    var paused = false {
+        didSet { monitor.paused = paused }
     }
+    /// The event tap is running (Input Monitoring is allowed). Observable mirror of the monitor's state.
+    private(set) var hotkeyRunning = false
     var onToggleWindow: (() -> Void)?
 
     init(library: Library, settings: SettingsStore) {
@@ -42,7 +43,8 @@ final class CaptureController {
     @discardableResult
     func start() -> Bool {
         monitor.hotkey = settings.settings.hotkey
-        return monitor.start()
+        hotkeyRunning = monitor.start()
+        return hotkeyRunning
     }
 
     func hotkeyChanged() {

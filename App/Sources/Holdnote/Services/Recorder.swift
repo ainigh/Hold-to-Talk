@@ -1,4 +1,5 @@
 import AVFoundation
+import AudioToolbox
 import CoreAudio
 import Foundation
 
@@ -8,7 +9,7 @@ import Foundation
 /// released, with no decoding. Nothing leaves the Mac.
 @MainActor
 final class Recorder {
-    static let modelRate = 16000
+    nonisolated static let modelRate = 16000
 
     struct Problem: LocalizedError {
         let errorDescription: String?
@@ -30,7 +31,7 @@ final class Recorder {
     }
 
     /// Asks for the microphone the first time; false when the user said no (or said no before).
-    static func permission() async -> Bool {
+    nonisolated static func permission() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized: return true
         case .notDetermined: return await AVCaptureDevice.requestAccess(for: .audio)
@@ -38,7 +39,7 @@ final class Recorder {
         }
     }
 
-    static var isAllowed: Bool { AVCaptureDevice.authorizationStatus(for: .audio) == .authorized }
+    nonisolated static var isAllowed: Bool { AVCaptureDevice.authorizationStatus(for: .audio) == .authorized }
 
     /// Starts recording from `deviceUID` (nil: the system's default input).
     func start(deviceUID: String?) throws {

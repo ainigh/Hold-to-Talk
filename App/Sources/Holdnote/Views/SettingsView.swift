@@ -28,6 +28,7 @@ struct GeneralSettings: View {
     @Binding var settings: Settings
     @State private var launchAtLogin = Permissions.launchesAtLogin
     @State private var loginProblem: String?
+    @State private var revertingLogin = false
 
     var body: some View {
         Form {
@@ -38,7 +39,13 @@ struct GeneralSettings: View {
             Text(hotkeyNote).font(.caption).foregroundStyle(.secondary)
             Toggle("Open at login", isOn: $launchAtLogin)
                 .onChange(of: launchAtLogin) { _, on in
-                    do { try Permissions.setLaunchAtLogin(on); loginProblem = nil } catch { loginProblem = error.localizedDescription; launchAtLogin = !on }
+                    // Putting the toggle back after a failure fires this again: that one is skipped.
+                    if revertingLogin { revertingLogin = false; return }
+                    do { try Permissions.setLaunchAtLogin(on); loginProblem = nil } catch {
+                        loginProblem = error.localizedDescription
+                        revertingLogin = true
+                        launchAtLogin = !on
+                    }
                 }
                 .disabled(!Updater.canUpdate)
             if let loginProblem { Text(loginProblem).font(.caption).foregroundStyle(.orange) }
@@ -92,6 +99,7 @@ struct TranscriptionSettings: View {
     let model: AppModel
     @Binding var settings: Settings
     @State private var vocabulary = ""
+    @State private var hasModel = false
     @State private var downloading: Double?
     @State private var downloadProblem: String?
 
@@ -102,13 +110,13 @@ struct TranscriptionSettings: View {
                     ForEach(Settings.models, id: \.name) { Text($0.title).tag($0.name) }
                 }
                 HStack {
-                    if model.library.transcriber.hasModel(settings.model) {
+                    if hasModel {
                         Label("Downloaded", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                         Spacer()
                         Button("Delete model") {
                             model.library.transcriber.unload()
                             try? FileManager.default.removeItem(at: model.library.transcriber.modelURL(settings.model))
-                            settings = settings  // redraw
+                            hasModel = false
                         }
                     } else if let downloading {
                         ProgressView(value: downloading).frame(width: 160)
@@ -145,7 +153,11 @@ struct TranscriptionSettings: View {
         }
         .formStyle(.grouped)
         .padding(.top, 8)
-        .onAppear { vocabulary = settings.vocabulary.joined(separator: "\n") }
+        .onAppear {
+            vocabulary = settings.vocabulary.joined(separator: "\n")
+            hasModel = model.library.transcriber.hasModel(settings.model)
+        }
+        .onChange(of: settings.model) { _, m in hasModel = model.library.transcriber.hasModel(m) }
     }
 
     private func download() {
@@ -159,6 +171,7 @@ struct TranscriptionSettings: View {
                     Task { @MainActor in downloading = p ?? 0 }
                 }
                 downloading = nil
+                hasModel = true
             } catch {
                 downloading = nil
                 downloadProblem = error.localizedDescription
