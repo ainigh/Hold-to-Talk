@@ -44,8 +44,27 @@ public struct Settings: Codable, Equatable, Sendable {
     public var deleteAudioAfterDays = 0
     /// The input device's unique ID, or nil for the system default.
     public var inputDeviceID: String?
+    /// Long audio is transcribed in this many parts at once: 0 for automatic, 1 for never.
+    public var parallelParts = 0
 
     public init() {}
+
+    /// A settings file from an older version has no key for anything added since; each missing
+    /// one keeps its default rather than failing the whole file (which would reset everything).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        hotkey = try c.decodeIfPresent(Hotkey.self, forKey: .hotkey) ?? hotkey
+        launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? launchAtLogin
+        sounds = try c.decodeIfPresent(Bool.self, forKey: .sounds) ?? sounds
+        model = try c.decodeIfPresent(String.self, forKey: .model) ?? model
+        language = try c.decodeIfPresent(String.self, forKey: .language) ?? language
+        vocabulary = try c.decodeIfPresent([String].self, forKey: .vocabulary) ?? vocabulary
+        removeFillers = try c.decodeIfPresent(Bool.self, forKey: .removeFillers) ?? removeFillers
+        copyAllHeaders = try c.decodeIfPresent(Bool.self, forKey: .copyAllHeaders) ?? copyAllHeaders
+        deleteAudioAfterDays = try c.decodeIfPresent(Int.self, forKey: .deleteAudioAfterDays) ?? deleteAudioAfterDays
+        inputDeviceID = try c.decodeIfPresent(String.self, forKey: .inputDeviceID)
+        parallelParts = try c.decodeIfPresent(Int.self, forKey: .parallelParts) ?? parallelParts
+    }
 
     /// Models the app offers, with what to expect of each (sizes from whisper.cpp's downloads).
     public static let models: [(name: String, title: String)] = [
