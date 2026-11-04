@@ -21,6 +21,8 @@ final class WhisperTranscriber: @unchecked Sendable {
     struct Options: Sendable {
         var language = "auto"
         var prompt = ""
+        /// Long audio in this many parts at once (the setting): 0 automatic, 1 never.
+        var parallelParts = 0
     }
 
     let modelsFolder: URL
@@ -66,7 +68,10 @@ final class WhisperTranscriber: @unchecked Sendable {
         loaded = nil
     }
 
-    /// Transcribes 16 kHz mono samples. One at a time; call off the main thread.
+    /// Transcribes 16 kHz mono samples. One recording at a time; call off the main thread.
+    /// Long audio is cut at quiet moments into parts (`AudioSplit`) that run at the same time,
+    /// each with its own whisper state on the one loaded model, and their segments are joined
+    /// back in order with their times offset.
     func transcribe(_ samples: [Float], model name: String, options: Options, progress: @escaping @Sendable (Double) -> Void) throws -> Result {
         lock.lock()
         defer { lock.unlock() }
@@ -82,6 +87,8 @@ final class WhisperTranscriber: @unchecked Sendable {
             loaded = nil
             var cparams = whisper_context_default_params()
             cparams.use_gpu = true
+            // Flash attention: the same result, noticeably faster on Metal.
+            cparams.flash_attn = true
             guard let c = whisper_init_from_file_with_params(url.path, cparams) else {
                 throw Problem("whisper couldn't load \(url.lastPathComponent). Delete it in Settings → Transcription and download it again.")
             }
@@ -89,8 +96,11 @@ final class WhisperTranscriber: @unchecked Sendable {
             ctx = c
         }
         // Whisper hears nothing in under a second of audio; pad so it doesn't fail outright.
-        var audio = samples
-        if audio.count < Recorder.modelRate { audio += [Float](repeating: 0, count: Recorder.modelRate - audio.count) }
+        let audio = samples.count < Recorder.modelRate ? samples + [Float](repeating: 0, count: Recorder.modelRate - samples.count) : samples
+
+        let parts = AudioSplit.parts(seconds: Double(audio.count) / Double(Recorder.modelRate), requested: options.parallelParts)
+        let ranges = AudioSplit.ranges(audio, rate: Recorder.modelRate, parts: parts)
+        let cores = max(2, ProcessInfo.processInfo.activeProcessorCount - 2)
 
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
         params.print_realtime = false
@@ -101,48 +111,108 @@ final class WhisperTranscriber: @unchecked Sendable {
         params.no_context = true
         params.single_segment = false
         params.suppress_blank = true
-        params.n_threads = Int32(max(2, ProcessInfo.processInfo.activeProcessorCount - 2))
-        let box = ProgressBox(progress)
+        params.n_threads = Int32(max(2, cores / ranges.count))
+        params.progress_callback = { _, _, percent, data in
+            guard let data else { return }
+            Unmanaged<PartProgress>.fromOpaque(data).takeUnretainedValue().report(Double(percent) / 100)
+        }
         let language = options.language.isEmpty ? "auto" : options.language
         let prompt = options.prompt
-        let status: Int32 = withExtendedLifetime(box) {
-            language.withCString { lang in
-                prompt.withCString { p in
-                    params.language = lang
-                    params.detect_language = false
-                    params.initial_prompt = prompt.isEmpty ? nil : p
-                    params.progress_callback_user_data = Unmanaged.passUnretained(box).toOpaque()
-                    params.progress_callback = { _, _, percent, data in
-                        guard let data else { return }
-                        Unmanaged<ProgressBox>.fromOpaque(data).takeUnretainedValue().report(Double(percent) / 100)
+        let tally = ProgressTally(weights: ranges.map { Double($0.count) / Double(audio.count) }, report: progress)
+        let collector = PartCollector(count: ranges.count)
+        // The C strings live for the whole run: every part's params point at them.
+        language.withCString { lang in
+            prompt.withCString { p in
+                params.language = lang
+                params.detect_language = false
+                params.initial_prompt = prompt.isEmpty ? nil : p
+                let base = params
+                DispatchQueue.concurrentPerform(iterations: ranges.count) { i in
+                    let range = ranges[i]
+                    let offset = Double(range.lowerBound) / Double(Recorder.modelRate)
+                    let part = PartProgress(tally: tally, index: i)
+                    var mine = base
+                    mine.progress_callback_user_data = Unmanaged.passUnretained(part).toOpaque()
+                    let chunk = Array(audio[range])
+                    let outcome: PartCollector.Outcome = withExtendedLifetime(part) { () -> PartCollector.Outcome in
+                        guard let state = whisper_init_state(ctx) else { return .failed(-1) }
+                        defer { whisper_free_state(state) }
+                        let status = chunk.withUnsafeBufferPointer { whisper_full_with_state(ctx, state, mine, $0.baseAddress, Int32($0.count)) }
+                        guard status == 0 else { return .failed(status) }
+                        var segments: [Recording.Segment] = []
+                        for s in 0..<whisper_full_n_segments_from_state(state) {
+                            let t0 = Double(whisper_full_get_segment_t0_from_state(state, s)) / 100
+                            let t1 = Double(whisper_full_get_segment_t1_from_state(state, s)) / 100
+                            let text = String(cString: whisper_full_get_segment_text_from_state(state, s)).trimmingCharacters(in: .whitespaces)
+                            guard !text.isEmpty, !Self.isNoise(text) else { continue }
+                            segments.append(Recording.Segment(start: offset + t0, end: offset + t1, text: text))
+                        }
+                        let found = String(cString: whisper_lang_str(whisper_full_lang_id_from_state(state)))
+                        return .done(segments, language: found)
                     }
-                    return audio.withUnsafeBufferPointer { whisper_full(ctx, params, $0.baseAddress, Int32($0.count)) }
+                    collector.set(i, outcome)
                 }
             }
         }
-        guard status == 0 else { throw Problem("whisper failed (\(status)).") }
-
         var segments: [Recording.Segment] = []
-        for i in 0..<whisper_full_n_segments(ctx) {
-            let t0 = Double(whisper_full_get_segment_t0(ctx, i)) / 100
-            let t1 = Double(whisper_full_get_segment_t1(ctx, i)) / 100
-            let text = String(cString: whisper_full_get_segment_text(ctx, i)).trimmingCharacters(in: .whitespaces)
-            guard !text.isEmpty, !Self.isNoise(text) else { continue }
-            segments.append(Recording.Segment(start: t0, end: t1, text: text))
+        var detected = ""
+        for outcome in collector.outcomes {
+            switch outcome {
+            case .some(.done(let segs, let lang)):
+                segments += segs
+                if detected.isEmpty { detected = lang }
+            case .some(.failed(let status)):
+                throw Problem("whisper failed (\(status)).")
+            case .none:
+                throw Problem("whisper failed.")
+            }
         }
-        let lang = String(cString: whisper_lang_str(whisper_full_lang_id(ctx)))
-        return Result(segments: segments, language: lang, model: name)
+        progress(1)
+        return Result(segments: segments, language: detected, model: name)
+    }
+
+    /// One part's progress, weighted into the whole's.
+    final class PartProgress: @unchecked Sendable {
+        let tally: ProgressTally
+        let index: Int
+        init(tally: ProgressTally, index: Int) { self.tally = tally; self.index = index }
+        func report(_ fraction: Double) { tally.set(index, fraction) }
+    }
+
+    /// The parts' progress added up by their share of the audio.
+    final class ProgressTally: @unchecked Sendable {
+        private let lock = NSLock()
+        private var fractions: [Double]
+        private let weights: [Double]
+        private let report: @Sendable (Double) -> Void
+        init(weights: [Double], report: @escaping @Sendable (Double) -> Void) {
+            self.weights = weights
+            fractions = Array(repeating: 0, count: weights.count)
+            self.report = report
+        }
+        func set(_ i: Int, _ fraction: Double) {
+            lock.lock()
+            fractions[i] = max(fractions[i], min(1, fraction))
+            let total = zip(fractions, weights).reduce(0) { $0 + $1.0 * $1.1 }
+            lock.unlock()
+            report(total)
+        }
+    }
+
+    /// Each part's result, written from its own thread.
+    final class PartCollector: @unchecked Sendable {
+        enum Outcome { case done([Recording.Segment], language: String), failed(Int32) }
+        private let lock = NSLock()
+        private var slots: [Outcome?]
+        init(count: Int) { slots = Array(repeating: nil, count: count) }
+        func set(_ i: Int, _ outcome: Outcome) { lock.lock(); slots[i] = outcome; lock.unlock() }
+        var outcomes: [Outcome?] { lock.lock(); defer { lock.unlock() }; return slots }
     }
 
     /// Whisper's markers for silence and sounds ("[BLANK_AUDIO]", "(wind blowing)") aren't words.
     static func isNoise(_ text: String) -> Bool {
         let t = text.trimmingCharacters(in: .whitespaces)
         return (t.hasPrefix("[") && t.hasSuffix("]")) || (t.hasPrefix("(") && t.hasSuffix(")")) || (t.hasPrefix("*") && t.hasSuffix("*"))
-    }
-
-    final class ProgressBox: @unchecked Sendable {
-        let report: @Sendable (Double) -> Void
-        init(_ report: @escaping @Sendable (Double) -> Void) { self.report = report }
     }
 
     /// Watches a download task's progress (the async download call has no progress of its own).

@@ -156,7 +156,7 @@ final class Library {
         let samples = samplesInMemory.removeValue(forKey: job.id)
         let audioURL = store.audioURL(for: r)
         let s = settings()
-        let options = WhisperTranscriber.Options(language: s.language, prompt: TranscriptText.vocabularyPrompt(s.vocabulary))
+        let options = WhisperTranscriber.Options(language: s.language, prompt: TranscriptText.vocabularyPrompt(s.vocabulary), parallelParts: s.parallelParts)
         let transcriber = transcriber
         let model = s.model
         let removeFillers = s.removeFillers
