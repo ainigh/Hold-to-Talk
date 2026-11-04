@@ -394,7 +394,7 @@ final class ReaderController {
             lastOutcome = problem
             Notifier.post(title: "The night stopped", body: problem)
         } else if finished {
-            lastOutcome = "The night is done. Open Morning to ask about it."
+            lastOutcome = "The night is done. Ask about it below."
             Notifier.post(title: "The night is done", body: "Open Holdnote's reader to ask about what it found.")
         } else {
             lastOutcome = "Stopped. Press Resume to carry on where it left off."

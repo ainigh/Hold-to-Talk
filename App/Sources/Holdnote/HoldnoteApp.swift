@@ -45,7 +45,6 @@ struct HoldnoteApp: App {
                 Button("Open the Reader") { model.showReader() }.keyboardShortcut("n", modifiers: [.command, .shift])
                 Button("Stream") { model.showReader(.stream) }
                 Button("Night") { model.showReader(.night) }
-                Button("Morning") { model.showReader(.morning) }
                 Button("Notes") { model.showReader(.notes) }
                 Divider()
                 if model.reader.running {
@@ -91,7 +90,7 @@ final class AppModel {
     let updater = Updater()
     /// CPU and memory, the Mac's and Holdnote's share, for the window's bottom bar and the menu.
     let monitor = SystemMonitor()
-    /// The reader: the stream, the night, the morning, the notes.
+    /// The reader: the stream, the night (reading and asking), the notes.
     let reader = ReaderController()
     /// What the window's right pane shows: the selected recording, or one of the reader's views.
     enum Pane: Hashable { case recordings, reader(ReaderView) }

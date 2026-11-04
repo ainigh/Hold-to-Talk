@@ -3,8 +3,8 @@ import Harness
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The one window: the sidebar on the left holds the reader's four views (Stream, Night, Morning,
-/// Notes) and then the recordings; the right pane shows whichever is chosen, the transcript of the
+/// The one window: the sidebar on the left holds the reader's three views (Stream, Night, Notes)
+/// and then the recordings; the right pane shows whichever is chosen, the transcript of the
 /// selected recording by default.
 struct MainWindow: View {
     @Bindable var model: AppModel
@@ -82,7 +82,6 @@ struct MainWindow: View {
         switch model.pane {
         case .reader(.stream): ReaderStreamView(model: model, go: { model.showReader($0) })
         case .reader(.night): ReaderNightView(model: model, go: { model.showReader($0) })
-        case .reader(.morning): ReaderMorningView(model: model)
         case .reader(.notes): ReaderNotesView(model: model)
         case .recordings: recordings
         }

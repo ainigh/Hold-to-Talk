@@ -1,9 +1,10 @@
 import Harness
 import SwiftUI
 
-/// Ask about the stream. The model can only open a note file or read sentences by number; every
-/// answer cites sentence ids. Flag anything wrong and it goes into corrections.md.
-struct ReaderMorningView: View {
+/// Ask about the stream, on the Night view under the run card. The model can only open a note
+/// file or read sentences by number; every answer cites sentence ids. Flag anything wrong and it
+/// goes into corrections.md.
+struct ReaderAskSection: View {
     let model: AppModel
     @State private var question = ""
     @StateObject private var flash = FlashState()
@@ -19,49 +20,29 @@ struct ReaderMorningView: View {
     ]
 
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Ask about the stream").font(.title2.weight(.semibold))
-                Text("The model can only open a note file or read sentences by number. Every answer cites sentence ids; click one to see your exact words. Flag anything wrong and it goes into corrections.md.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                HStack {
-                    Text(stateLine).font(.system(size: 11)).foregroundStyle(.secondary)
-                    Spacer()
-                    Flash(text: flash.text)
-                    if !reader.chat.isEmpty {
-                        Button("Clear conversation") {
-                            confirm("Clear this conversation?", detail: "Flags already written to corrections.md are kept.", button: "Clear") { reader.clearChat() }
-                        }
-                        .buttonStyle(.link).font(.system(size: 11))
+        ReaderBlock(title: "Ask about the stream", lede: "The model can only open a note file or read sentences by number. Every answer cites sentence ids; click one to see your exact words. Flag anything wrong and it goes into corrections.md.") {
+            HStack {
+                Text(stateLine).font(.system(size: 11)).foregroundStyle(.secondary)
+                Spacer()
+                Flash(text: flash.text)
+                if !reader.chat.isEmpty {
+                    Button("Clear conversation") {
+                        confirm("Clear this conversation?", detail: "Flags already written to corrections.md are kept.", button: "Clear") { reader.clearChat() }
+                    }
+                    .buttonStyle(.link).font(.system(size: 11))
+                }
+            }
+            if reader.chat.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Nothing asked yet. Try one of these, or write your own below.").font(.system(size: 12)).foregroundStyle(.secondary)
+                    ForEach(Self.suggestions, id: \.self) { s in
+                        Button(s) { reader.ask(s) }.buttonStyle(.link).font(.system(size: 13)).disabled(!canAsk)
                     }
                 }
             }
-            .padding(24)
-            .padding(.bottom, 0)
-            Divider()
-            // Kept at the bottom as answers arrive by the scroll view's own anchor: no
-            // ScrollViewReader, which the window's SwiftUI content did not survive.
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if reader.chat.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Nothing asked yet. Try one of these, or write your own below.").font(.system(size: 12)).foregroundStyle(.secondary)
-                            ForEach(Self.suggestions, id: \.self) { s in
-                                Button(s) { reader.ask(s) }.buttonStyle(.link).font(.system(size: 13)).disabled(!canAsk)
-                            }
-                        }
-                    }
-                    ForEach(reader.chat) { turn in
-                        TurnView(model: model, turn: turn, pending: reader.asking && turn.id == reader.chat.last?.id) { msg in flash.show(msg) }
-                            .id(turn.id)
-                    }
-                }
-                .padding(24)
-                .frame(maxWidth: 760, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            ForEach(reader.chat) { turn in
+                TurnView(model: model, turn: turn, pending: reader.asking && turn.id == reader.chat.last?.id) { msg in flash.show(msg) }
             }
-            .defaultScrollAnchor(reader.chat.isEmpty ? .top : .bottom)
-            Divider()
             HStack(spacing: 10) {
                 TextField("Ask anything about what you wrote… (↵ to ask)", text: $question)
                     .textFieldStyle(.roundedBorder)
@@ -70,7 +51,6 @@ struct ReaderMorningView: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(!reader.asking && (!canAsk || question.trimmingCharacters(in: .whitespaces).isEmpty))
             }
-            .padding(16)
         }
     }
 

@@ -116,7 +116,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             if let g = reader.gaps, !g.open.isEmpty {
                 add("\(g.open.count) question\(g.open.count == 1 ? "" : "s") for you…", to: menu) { $0.showReader(.stream) }
             } else if reader.hasNotes {
-                add("Ask About the Stream…", to: menu) { $0.showReader(.morning) }
+                add("Ask About the Stream…", to: menu) { $0.showReader(.night) }
             }
         }
         menu.addItem(.separator())

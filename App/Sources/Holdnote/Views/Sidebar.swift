@@ -186,8 +186,8 @@ struct Sidebar: View {
             return reader.stream.count > 0 ? reader.stream.count.formatted() : ""
         case .night:
             if reader.running { return "\(reader.percent)%" }
-            return reader.stream.unread > 0 ? "\(reader.stream.unread.formatted()) unread" : ""
-        case .morning: return reader.notesCount > 0 ? "\(reader.notesCount) note\(reader.notesCount == 1 ? "" : "s")" : ""
+            if reader.stream.unread > 0 { return "\(reader.stream.unread.formatted()) unread" }
+            return reader.notesCount > 0 ? "\(reader.notesCount) note\(reader.notesCount == 1 ? "" : "s")" : ""
         case .notes: return reader.files.isEmpty ? "" : reader.files.count.formatted()
         }
     }
