@@ -1,6 +1,7 @@
 import AppKit
 import Harness
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The left pane: newest first, grouped by day, with a status dot while a transcript is on its way.
 struct RecordingList: View {
@@ -25,6 +26,7 @@ struct RecordingList: View {
             model.copySelected()
             return []
         }
+        .onPasteCommand(of: [.plainText]) { _ in model.pasteText() }
         .onKeyPress(.space) {
             model.togglePlayback()
             return .handled

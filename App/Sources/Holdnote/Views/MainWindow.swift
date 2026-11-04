@@ -18,6 +18,10 @@ struct MainWindow: View {
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
                     UpdateStatus(updater: model.updater)
+                    Toggle(isOn: $model.showingAll) { Label("All Text", systemImage: "doc.plaintext") }
+                        .help("Every transcript in the list as one continuous text (⌘⇧A). Select all and copy, or Copy All.")
+                    Button { model.pasteText() } label: { Label("Paste", systemImage: "doc.on.clipboard") }
+                        .help("The clipboard's text as a new note (⌘⇧V)")
                     Button { model.copyAll() } label: { Label("Copy All", systemImage: "doc.on.doc") }
                         .help("Copy every transcript in the list, newest first (⌘⇧C)")
                         .disabled(model.listed.isEmpty)
@@ -42,7 +46,9 @@ struct MainWindow: View {
     @ViewBuilder
     private var detail: some View {
         let selected = model.selectedRecordings
-        if model.library.recordings.isEmpty {
+        if model.showingAll, !model.listed.isEmpty {
+            AllTextView(model: model)
+        } else if model.library.recordings.isEmpty {
             EmptyState(hotkey: model.settings.settings.hotkey)
         } else if selected.count == 1, let r = selected.first {
             TranscriptView(model: model, recording: r)
