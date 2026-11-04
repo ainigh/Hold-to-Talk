@@ -76,7 +76,8 @@ struct SentenceIds: View {
             if ids.isEmpty {
                 Text("no sentence ids cited").font(.system(size: 11)).foregroundStyle(.secondary)
             } else {
-                FlowRow(spacing: 4) {
+                // An adaptive grid wraps the ids like text with SwiftUI's own layout.
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: 4, alignment: .leading)], alignment: .leading, spacing: 4) {
                     ForEach(ids, id: \.self) { id in
                         let isUnread = unread.contains(id)
                         Button {
@@ -102,39 +103,6 @@ struct SentenceIds: View {
                     .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary.opacity(0.5)))
                 }
             }
-        }
-    }
-}
-
-/// Lays its children out in rows, wrapping like text. Always answers with a finite size: an
-/// unbounded or missing width proposal gets one row, never an infinite frame (which SwiftUI
-/// answers by drawing nothing at all).
-struct FlowRow: Layout {
-    var spacing: CGFloat = 4
-
-    private func rows(_ subviews: Subviews, width: CGFloat?) -> (size: CGSize, frames: [CGRect]) {
-        let limit = width.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
-        var frames: [CGRect] = []
-        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, widest: CGFloat = 0
-        for s in subviews {
-            let size = s.sizeThatFits(.unspecified)
-            if let limit, x > 0, x + size.width > limit { x = 0; y += rowHeight + spacing; rowHeight = 0 }
-            frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
-            x += size.width + spacing
-            widest = max(widest, x - spacing)
-            rowHeight = max(rowHeight, size.height)
-        }
-        return (CGSize(width: limit ?? widest, height: y + rowHeight), frames)
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        rows(subviews, width: proposal.width).size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let laid = rows(subviews, width: bounds.width)
-        for (s, f) in zip(subviews, laid.frames) {
-            s.place(at: CGPoint(x: bounds.minX + f.minX, y: bounds.minY + f.minY), proposal: ProposedViewSize(f.size))
         }
     }
 }
