@@ -39,28 +39,28 @@ struct ReaderMorningView: View {
             .padding(24)
             .padding(.bottom, 0)
             Divider()
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        if reader.chat.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Nothing asked yet. Try one of these, or write your own below.").font(.system(size: 12)).foregroundStyle(.secondary)
-                                ForEach(Self.suggestions, id: \.self) { s in
-                                    Button(s) { reader.ask(s) }.buttonStyle(.link).font(.system(size: 13)).disabled(!canAsk)
-                                }
+            // Kept at the bottom as answers arrive by the scroll view's own anchor: no
+            // ScrollViewReader, which the window's SwiftUI content did not survive.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if reader.chat.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Nothing asked yet. Try one of these, or write your own below.").font(.system(size: 12)).foregroundStyle(.secondary)
+                            ForEach(Self.suggestions, id: \.self) { s in
+                                Button(s) { reader.ask(s) }.buttonStyle(.link).font(.system(size: 13)).disabled(!canAsk)
                             }
                         }
-                        ForEach(reader.chat) { turn in
-                            TurnView(model: model, turn: turn, pending: reader.asking && turn.id == reader.chat.last?.id) { msg in flash.show(msg) }
-                                .id(turn.id)
-                        }
                     }
-                    .padding(24)
-                    .frame(maxWidth: 760, alignment: .leading)
+                    ForEach(reader.chat) { turn in
+                        TurnView(model: model, turn: turn, pending: reader.asking && turn.id == reader.chat.last?.id) { msg in flash.show(msg) }
+                            .id(turn.id)
+                    }
                 }
-                .onChange(of: reader.chat.count) { _, _ in if let last = reader.chat.last { proxy.scrollTo(last.id, anchor: .bottom) } }
-                .onChange(of: reader.askLive.count) { _, _ in if reader.asking, let last = reader.chat.last { proxy.scrollTo(last.id, anchor: .bottom) } }
+                .padding(24)
+                .frame(maxWidth: 760, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .defaultScrollAnchor(reader.chat.isEmpty ? .top : .bottom)
             Divider()
             HStack(spacing: 10) {
                 TextField("Ask anything about what you wrote… (↵ to ask)", text: $question)
