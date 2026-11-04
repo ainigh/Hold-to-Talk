@@ -106,6 +106,25 @@ final class Library {
         return r
     }
 
+    /// An audio file from elsewhere (an m4a from Voice Memos, an mp3, a wav…) joins the list as a
+    /// recording and is transcribed. The file is copied into the store as it is; whisper and the
+    /// player read any format this Mac can. Throws when it can't be read.
+    @discardableResult
+    func importAudio(_ url: URL) throws -> Recording {
+        guard let duration = AudioDecoder.duration(url), duration > 0 else {
+            throw WhisperTranscriber.Problem("\(url.lastPathComponent) isn't an audio file this Mac can read.")
+        }
+        let id = UUID()
+        let ext = url.pathExtension.isEmpty ? "audio" : url.pathExtension.lowercased()
+        let name = RecordingStore.audioFileName(for: id, ext: ext)
+        try FileManager.default.copyItem(at: url, to: store.audioFolder.appendingPathComponent(name))
+        let r = Recording(id: id, duration: duration, audioFile: name, sourceDevice: "Imported: \(url.lastPathComponent)", status: .transcribing)
+        recordings.insert(r, at: 0)
+        try store.save(r)
+        enqueue(id)
+        return r
+    }
+
     /// The recording was an accident: gone without a trace.
     func discard(_ id: UUID) {
         guard let i = index(id) else { return }

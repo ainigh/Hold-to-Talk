@@ -101,6 +101,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             add("Stop Recording", to: menu) { $0.capture.stopFromMenu() }
         }
         add("New Note from Clipboard", to: menu) { $0.pasteText() }
+        add("Import Audio Files…", to: menu) { $0.importAudio() }
         menu.addItem(.separator())
         // The reader: open it, start or stop the night, and how far it is.
         add("Open the Reader", key: "n", to: menu) { $0.showReader() }.keyEquivalentModifierMask = [.command, .shift]
