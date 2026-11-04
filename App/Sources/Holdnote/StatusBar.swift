@@ -28,32 +28,36 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     /// Redrawn whenever what it shows changes.
     private func refreshIcon() {
-        let (recording, transcribing, update, warning) = withObservationTracking {
+        let (recording, transcribing, update, warning, listening, speaking) = withObservationTracking {
             (model.capture.isRecording, model.library.transcribing != nil, model.updater.available != nil,
-             !model.capture.hotkeyRunning || model.capture.paused)
+             !model.capture.hotkeyRunning || model.capture.paused, model.capture.isListening, model.capture.isSpeaking)
         } onChange: { [weak self] in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.refreshIcon() } }
         }
         let symbol: String
-        if recording { symbol = "record.circle.fill" }
+        if recording || speaking { symbol = "record.circle.fill" }
+        else if listening { symbol = "ear.fill" }
         else if transcribing { symbol = "waveform.badge.magnifyingglass" }
         else if update { symbol = "arrow.down.circle" }
         else if warning { symbol = "waveform.slash" }
         else { symbol = "waveform" }
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Holdnote")
-        image?.isTemplate = !recording
+        let live = recording || speaking
+        image?.isTemplate = !live
         item.button?.image = image
-        item.button?.contentTintColor = recording ? .systemRed : nil
-        // Breathes at 1 Hz while recording.
-        if recording, blink == nil {
+        item.button?.contentTintColor = live ? .systemRed : nil
+        // Breathes at 1 Hz while recording; pulses slowly while listening, so an open mic is never a surprise.
+        let pulse = live || listening
+        if pulse, blink == nil {
             blink = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.blinkOn.toggle()
-                    self.item.button?.alphaValue = self.blinkOn ? 0.45 : 1
+                    let speaking = self.model.capture.isRecording || self.model.capture.isSpeaking
+                    self.item.button?.alphaValue = self.blinkOn ? (speaking ? 0.45 : 0.6) : 1
                 }
             }
-        } else if !recording, let blink {
+        } else if !pulse, let blink {
             blink.invalidate()
             self.blink = nil
             item.button?.alphaValue = 1
@@ -87,6 +91,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             add("Finish setup…", to: menu) { $0.showSetup() }
             menu.addItem(.separator())
         }
+        let listen = add(model.capture.isListening ? "Voice Detection: On" : "Voice Detection", to: menu) { $0.listening.toggle() }
+        listen.state = model.capture.isListening ? .on : .off
+        if model.capture.isListening { note(model.capture.isSpeaking ? "   Hearing speech…" : "   Listening; recordings start when you speak", in: menu) }
+        menu.addItem(.separator())
         add("Open Holdnote", key: "h", to: menu) { $0.showWindow() }.keyEquivalentModifierMask = [.command, .shift]
         if model.capture.isRecording {
             add("Stop Recording", to: menu) { $0.capture.stopFromMenu() }
