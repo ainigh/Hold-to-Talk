@@ -87,6 +87,7 @@ public enum ReaderStream {
         /// stream.txt exists but has not been numbered yet.
         public var rawPresent = false
         public var stale = false
+        public init() {}
     }
 
     public static func state(in folder: NotesFolder, config: ReaderConfig, lenses: [Lens]) -> State {
