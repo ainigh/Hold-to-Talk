@@ -162,7 +162,7 @@ struct RecordingPill: View {
                 }
                 Text(hud.note ?? TranscriptText.duration(hud.seconds))
                     .font(.system(size: 13, weight: .medium, design: .monospaced))
-                    .foregroundStyle(hud.note == nil ? .primary : .orange)
+                    .foregroundStyle(hud.note == nil ? Color.primary : Color.orange)
                     .lineLimit(1)
                     .fixedSize()
             }
