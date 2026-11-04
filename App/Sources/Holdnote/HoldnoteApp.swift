@@ -65,6 +65,8 @@ final class AppModel {
     let capture: CaptureController
     let player = AudioPlayer()
     let updater = Updater()
+    /// CPU and memory, the Mac's and Holdnote's share, for the window's bottom bar and the menu.
+    let monitor = SystemMonitor()
     /// Set by the updater, which quits to swap the app.
     @ObservationIgnored var quittingForUpdate = false
     /// The window's selection (ids), shared with the menus and ⌥+hotkey.
@@ -145,6 +147,8 @@ final class AppModel {
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }
+
+    var isWindowVisible: Bool { window?.isVisible ?? false }
 
     /// ⌘⇧H and the menu bar icon: the window closes when it is open in front, else it opens.
     func toggleWindow() {

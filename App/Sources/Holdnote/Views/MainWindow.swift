@@ -7,22 +7,26 @@ struct MainWindow: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        NavigationSplitView {
-            RecordingList(model: model)
-                .navigationSplitViewColumnWidth(min: 280, ideal: 320)
-        } detail: {
-            detail
-        }
-        .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search transcripts")
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                UpdateStatus(updater: model.updater)
-                Button { model.copyAll() } label: { Label("Copy All", systemImage: "doc.on.doc") }
-                    .help("Copy every transcript in the list, newest first (⌘⇧C)")
-                    .disabled(model.listed.isEmpty)
-                Button { model.showSettings() } label: { Label("Settings", systemImage: "gearshape") }
-                    .help("Settings (⌘,)")
+        VStack(spacing: 0) {
+            NavigationSplitView {
+                RecordingList(model: model)
+                    .navigationSplitViewColumnWidth(min: 280, ideal: 320)
+            } detail: {
+                detail
             }
+            .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search transcripts")
+            .toolbar {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    UpdateStatus(updater: model.updater)
+                    Button { model.copyAll() } label: { Label("Copy All", systemImage: "doc.on.doc") }
+                        .help("Copy every transcript in the list, newest first (⌘⇧C)")
+                        .disabled(model.listed.isEmpty)
+                    Button { model.showSettings() } label: { Label("Settings", systemImage: "gearshape") }
+                        .help("Settings (⌘,)")
+                }
+            }
+            Divider()
+            UsageBar(monitor: model.monitor, transcribing: model.library.transcribing != nil)
         }
         .overlay(alignment: .bottom) {
             if !model.library.pendingDeletes.isEmpty {
