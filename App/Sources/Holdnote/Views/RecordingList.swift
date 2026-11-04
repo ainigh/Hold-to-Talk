@@ -70,6 +70,7 @@ struct RecordingRow: View {
                     Text(TranscriptText.duration(recording.duration))
                     if recording.isEdited { Text("· edited") }
                     if recording.audioFile == nil { Text("· text only") }
+                    if recording.sessionID != nil { Text("· heard") }
                     if let progress, progress > 0 { Text("· \(Int(progress * 100))%") }
                 }
                 .font(.system(size: 11))
