@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key><string>Holdnote</string>
+	<key>CFBundleIdentifier</key><string>app.ainigh.holdnote</string>
+	<key>CFBundleName</key><string>Holdnote</string>
+	<key>CFBundleDisplayName</key><string>Holdnote</string>
+	<key>CFBundlePackageType</key><string>APPL</string>
+	<key>CFBundleShortVersionString</key><string>0.1</string>
+	<key>CFBundleVersion</key><string>1</string>
+	<key>LSMinimumSystemVersion</key><string>14.0</string>
+	<key>LSUIElement</key><true/>
+	<key>NSHumanReadableCopyright</key><string>Everything stays on this Mac. The only downloads are the app's own updates and the speech model, once.</string>
+	<key>NSMicrophoneUsageDescription</key><string>Holdnote records while you hold the hotkey and transcribes on this Mac; the audio never leaves it.</string>
+</dict>
+</plist>
