@@ -100,17 +100,14 @@ struct ReaderNightView: View {
                 }
             }
             DisclosureGroup(isExpanded: $showLog) {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        Text(reader.logText.isEmpty ? "Nothing yet." : reader.logText)
-                            .font(.system(size: 11, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .id("end")
-                    }
-                    .frame(height: 180)
-                    .onChange(of: reader.log.count) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
+                ScrollView {
+                    Text(reader.logText.isEmpty ? "Nothing yet." : reader.logText)
+                        .font(.system(size: 11, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .frame(height: 180)
+                .defaultScrollAnchor(.bottom)
             } label: {
                 HStack {
                     Text("Log").font(.system(size: 12, weight: .medium))
@@ -151,15 +148,12 @@ struct ReaderNightView: View {
                 ScrollView { Text(live.thinking).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
                     .frame(height: 80).padding(6).background(RoundedRectangle(cornerRadius: 6).fill(.background))
             }
-            ScrollViewReader { proxy in
-                ScrollView {
-                    Text(live.output.isEmpty ? " " : live.output)
-                        .font(.system(size: 12, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                        .id("out")
-                }
-                .frame(height: 160)
-                .onChange(of: live.output.count) { _, _ in proxy.scrollTo("out", anchor: .bottom) }
+            ScrollView {
+                Text(live.output.isEmpty ? " " : live.output)
+                    .font(.system(size: 12, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(height: 160)
+            .defaultScrollAnchor(.bottom)
             .padding(6)
             .background(RoundedRectangle(cornerRadius: 6).fill(.background))
         }
