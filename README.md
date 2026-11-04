@@ -1,9 +1,9 @@
 # Holdnote — Hold-to-Talk Mac Recorder & Transcriber
 
-A menu-bar-only macOS app: hold **Fn** to record, release to get an editable, copyable transcript, made on this Mac by whisper.cpp. Nothing leaves the machine. `SPEC.md` is the source of truth.
+A menu-bar-only macOS app: hold **Fn** to record, release to get an editable, copyable transcript, made on this Mac by whisper.cpp. Nothing leaves the machine. `SPEC.md` is the source of truth for recording and transcribing; `READER.md` for the reader, which reads everything you said overnight through a local model and answers questions about it in the morning.
 
 ```
-Harness/   pure Swift package, no UI: the hold gesture, recordings and their folder store, transcript text, settings, the updater's logic
+Harness/   pure Swift package, no UI: the hold gesture, recordings and their folder store, transcript text, settings, the updater's logic, the reader's engine (sentences, lenses, the night, the morning)
 App/       the SwiftUI + AppKit menu bar app, a thin projection of the harness
 scripts/   build-app.sh: builds, signs and zips Holdnote.app (CI and the updater run it); smoke-test.sh opens it and checks
 ```
@@ -50,6 +50,17 @@ A setup window asks for the four things the hotkey needs, each with a button, an
 - **The bar at the bottom of the window** shows what the Mac is spending and Holdnote's share of it: CPU in use across every app with Holdnote's part in the accent colour, memory in use of what's installed with Holdnote's footprint (mostly the loaded speech model), and a warning when the Mac is running hot. Hover it for the explanation. The menu bar menu shows the same two lines.
 - Everything lives in `~/Library/Application Support/Holdnote/`: `Recordings/<id>.json`, `Audio/<id>.wav`, `Models/`. Export as Markdown from the Recording menu or Settings → Storage.
 
+## The reader (overnight)
+
+What you say all day becomes something you can ask about. **⌘⇧N** (or **Open the Reader** in the menu bar menu) opens the reader window, with four views down the left in the order you use them:
+
+- **Stream.** Your goals (what you are trying to find out), the questions the reader has for you, and a box to paste text into. Every final transcript joins the stream by itself when a night starts, oldest first under its date (**Add them now** does it sooner; Settings → Reader turns it off). Sentences are numbered once and keep their ids.
+- **Night.** **Start the night** reads everything unread through every lens, one window at a time, then generates and answers questions from your goals; the card shows what the model is writing as it writes it, a progress strip per lens and the log. It runs in the background: close the window, the menu bar icon shows a moon, and the menu says how far it is. **Stop after this call** keeps the place; **Resume** carries on. The lenses (ledger, people and things, threads, feelings, tensions, open threads, against the goals, questions for you) are editable there; the model sees the instructions verbatim.
+- **Morning.** Ask anything. The model may only open a note file or read sentences by id, and every answer cites ids: click one to see your exact words (a `?` marks an id it cited without reading). **Flag** a wrong answer and it goes into `corrections.md`, which the model reads before every later answer.
+- **Notes.** Every file the night wrote, in the folder (`~/Library/Application Support/Holdnote/Reader/`, or one you choose, iCloud Drive included), with an editor.
+
+It needs [Ollama](https://ollama.com) running on this Mac with a model pulled (`ollama pull llama3.1:8b`); Settings → Reader picks the model and the budgets, can size the window to the model's maximum, and can start a night by itself at a set time every day. `READER.md` has the whole design, from the lenses to the files and the budgets.
+
 ## Build and test
 
 Harness (Linux or macOS, Swift 6.1):
@@ -78,6 +89,9 @@ Or open `App/Package.swift` in Xcode.
 | Settings and what the Fn key is set to | `Harness/Storage/Settings` |
 | Day groups and search | `Harness/Model/DayGroups` |
 | What the updater compares (versions, releases, commits, the update plan) | `Harness/Update/` |
+| The stream's sentences and ids, the lenses, the night (windows, notebooks, the question pass), the morning's two tools, the reader's files and progress | `Harness/Reader/` |
+| Ollama over HTTP, the reader's state and what runs the night | `App/Services/OllamaClient`, `App/Services/ReaderController` |
+| The reader window: Stream, Night, Morning, Notes | `App/Views/Reader*` |
 | The event tap, the recorder, whisper, playback, permissions, the updater | `App/Services/` |
 | The hold → record → transcribe flow and the HUD pill | `App/Capture.swift`, `App/Views/HUD.swift` |
 | The window, list, transcript, settings, setup | `App/Views/` |

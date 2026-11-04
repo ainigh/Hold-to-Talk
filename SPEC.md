@@ -6,7 +6,9 @@ Nov 3, 2026 · @nigh
 
 A menu-bar-only macOS app that turns a held Fn key into a voice recorder and turns every recording into a near-perfect, editable, copyable transcript, fully on-device. Working name: **Holdnote**.
 
-The app does three things and nothing else:
+The app does three things, and a fourth that lives in its own window and its own spec (`READER.md`): the reader, which takes every transcript into a stream, reads it overnight through several lenses with a local model (Ollama), and answers questions about it in the morning, citing the sentences it relied on.
+
+The recorder does three things and nothing else:
 
 1. **Capture** — hold Fn to record, release to stop (or let voice-detection mode record for you).
 2. **Transcribe** — a two-pass on-device pipeline: fast live text while you talk, then a slower, best-available model rewrites it for accuracy.
