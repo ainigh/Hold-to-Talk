@@ -4,7 +4,7 @@ The app's behaviour as a pure Swift package with no UI import, so every push tes
 
 ```
 swift build      # zero warnings
-swift test       # 39 tests, well under a second
+swift test       # 43 tests, well under a second
 ```
 
 | Module | What it does | Spec section |
@@ -17,6 +17,7 @@ swift test       # 39 tests, well under a second
 | `Storage/WAVRepair` | Fixes the RIFF and data sizes of a WAV whose writer never closed it, so a crash mid-recording loses nothing. | "App crashes mid-recording" |
 | `Storage/Settings` | The settings with the spec's defaults; `FnUsage` reads what macOS does with the Fn key. | "Settings", "Permissions" |
 | `Model/DayGroups` | Today, Yesterday, then dates; text search. | "Main window" |
+| `Model/Usage` | A usage sample (system and Holdnote CPU, memory, thermal state) and its words: the meters' labels, the menu's lines, the explanation. The app's `SystemMonitor` fills it from Mach. | — |
 | `Update/Release` | Versions, GitHub releases and commits, and the update plan (download GitHub's build, or build here). From ainigh/Layered. | — |
 
 ## Decisions where the spec was open, and where v0.1 stops short

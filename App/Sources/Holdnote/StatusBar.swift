@@ -74,6 +74,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     func menuDidClose(_ menu: NSMenu) {
         item.menu = nil
+        // Sampling is for eyes on it: the window's bar starts it again when it is open.
+        if !model.isWindowVisible { model.monitor.stop() }
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -101,6 +103,15 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let pause = add(model.capture.paused ? "Resume Hotkey" : "Pause Hotkey", to: menu) { $0.capture.paused.toggle() }
         pause.state = model.capture.paused ? .on : .off
         menu.addItem(.separator())
+        // A fresh reading for the menu: the monitor runs while the window is open; else one is taken now
+        // (its CPU figures need two readings, so the first menu after a while shows the last known).
+        model.monitor.start()
+        if let s = model.monitor.sample {
+            note(UsageText.cpu(s), in: menu)
+            note(UsageText.memory(s), in: menu)
+            if s.thermal != .nominal { note(s.thermal.title, in: menu) }
+            menu.addItem(.separator())
+        }
         switch model.updater.state {
         case let .available(plan):
             add(plan.title + "…", to: menu) { $0.updater.confirmInstall() }
