@@ -4,7 +4,6 @@ import SwiftUI
 /// Everything the night wrote, as plain text in the folder. Edit and save; the morning reads whatever is here.
 struct ReaderNotesView: View {
     let model: AppModel
-    @State private var confirmDiscard: String?
     @StateObject private var flash = FlashState()
 
     private var reader: ReaderController { model.reader }
@@ -61,9 +60,6 @@ struct ReaderNotesView: View {
             .frame(minWidth: 360)
         }
         .onAppear { reader.refreshFiles() }
-        .confirmationDialog("Discard unsaved changes to \(reader.currentFile ?? "")?", isPresented: Binding(get: { confirmDiscard != nil }, set: { if !$0 { confirmDiscard = nil } }), titleVisibility: .visible) {
-            Button("Discard", role: .destructive) { if let f = confirmDiscard { reader.openFile(f, discarding: true) }; confirmDiscard = nil }
-        }
     }
 
     struct Group: Identifiable {
@@ -80,7 +76,8 @@ struct ReaderNotesView: View {
     }
 
     private func open(_ f: String) {
-        if !reader.openFile(f) { confirmDiscard = f }
+        if reader.openFile(f) { return }
+        confirm("Discard unsaved changes to \(reader.currentFile ?? "this file")?", detail: "What you typed since the last save is lost.", button: "Discard") { _ = reader.openFile(f, discarding: true) }
     }
 
     private func save() {

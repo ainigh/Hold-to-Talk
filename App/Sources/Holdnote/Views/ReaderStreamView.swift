@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// by themselves; pastes and dropped text files join it here; the reader's questions are answered here.
 struct ReaderStreamView: View {
     let model: AppModel
-    let go: (ReaderWindow.ReaderView) -> Void
+    let go: (ReaderView) -> Void
     @State private var addText = ""
     @State private var dropping = false
     @StateObject private var flash = FlashState()
