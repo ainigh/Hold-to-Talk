@@ -7,6 +7,7 @@ import SwiftUI
 struct UsageBar: View {
     let monitor: SystemMonitor
     let transcribing: Bool
+    var listening = false
 
     var body: some View {
         HStack(spacing: 18) {
@@ -20,6 +21,9 @@ struct UsageBar: View {
                         .foregroundStyle(s.thermal == .fair ? Color.secondary : Color.orange)
                 }
                 Spacer()
+                if listening {
+                    Label("Listening", systemImage: "ear").foregroundStyle(.secondary)
+                }
                 if transcribing {
                     Label("Transcribing", systemImage: "waveform").foregroundStyle(.secondary)
                 }

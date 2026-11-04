@@ -19,6 +19,7 @@ struct HoldnoteApp: App {
                 Button("Settings…") { model.showSettings() }.keyboardShortcut(",", modifiers: .command)
             }
             CommandMenu("Recording") {
+                Button(model.capture.isListening ? "Stop Voice Detection" : "Start Voice Detection") { model.listening.toggle() }.keyboardShortcut("l", modifiers: [.command, .shift])
                 Button("New Note from Clipboard") { model.pasteText() }.keyboardShortcut("v", modifiers: [.command, .shift])
                 Button(model.showingAll ? "Show One Recording" : "Show All Text") { model.showingAll.toggle(); model.showWindow() }.keyboardShortcut("a", modifiers: [.command, .shift])
                 Divider()
@@ -130,7 +131,14 @@ final class AppModel {
         }
     }
 
+    /// Voice detection, on or off (the toolbar, the menus, the menu bar).
+    var listening: Bool {
+        get { capture.isListening }
+        set { capture.setListening(newValue) }
+    }
+
     func willQuit() {
+        capture.setListening(false)
         library.saveNow()
         library.commitDeletes()
         capture.interrupt(reason: nil)

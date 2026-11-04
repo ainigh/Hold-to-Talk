@@ -43,10 +43,12 @@ public struct Recording: Codable, Equatable, Identifiable, Sendable {
     /// Why the transcript failed, when it did.
     public var failure: String?
     public var model: String?
+    /// Set for a segment voice detection recorded (the listening session it came from).
+    public var sessionID: UUID?
 
     public init(id: UUID = UUID(), createdAt: Date = Date(), duration: TimeInterval = 0, audioFile: String? = nil,
                 sourceDevice: String? = nil, language: String? = nil, machineText: String = "", text: String = "",
-                segments: [Segment] = [], status: Status = .recording, failure: String? = nil, model: String? = nil) {
+                segments: [Segment] = [], status: Status = .recording, failure: String? = nil, model: String? = nil, sessionID: UUID? = nil) {
         self.id = id
         self.createdAt = createdAt
         self.duration = duration
@@ -59,6 +61,7 @@ public struct Recording: Codable, Equatable, Identifiable, Sendable {
         self.status = status
         self.failure = failure
         self.model = model
+        self.sessionID = sessionID
     }
 
     /// Whether the text differs from what the machine wrote.

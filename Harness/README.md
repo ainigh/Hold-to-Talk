@@ -4,12 +4,13 @@ The app's behaviour as a pure Swift package with no UI import, so every push tes
 
 ```
 swift build      # zero warnings
-swift test       # 43 tests, well under a second
+swift test       # 50 tests, well under a second
 ```
 
 | Module | What it does | Spec section |
 | --- | --- | --- |
 | `Capture/HoldGesture` | Presses and releases with times in, `start`/`stop(keep:)` actions out: 250 ms before a hold counts, clips under 1.5 s discarded, a second tap within 350 ms locks, a locked recording stops at 2 h. | "Hold Fn to record" |
+| `Capture/VoiceActivity` | Voice detection from loudness alone: a background level that follows the room, speech a few times louder than it; segments start after 300 ms, end after 2 s of silence, drop under 1.5 s, cut at 10 min. | "Voice-detection mode" |
 | `Model/Recording` | One recording: `machineText` (never edited by hand) and `text` (yours); `replaceMachineText` keeps your edits through a re-transcribe. Status: recording, transcribing, final, failed. | "Data, storage and privacy" |
 | `Text/TranscriptMerge` | Your text as word-level edits to the old machine text, re-applied onto the new one by aligning the two machine texts. A correction the new transcript already made is not doubled; an edit whose place vanished is kept at the nearest one. | "edits are stored as a diff" |
 | `Text/TranscriptText` | Row titles (first 60 characters, on a word), Copy all (newest first, `yyyy-MM-dd HH:mm` line, blank-line separator, headers optional), whitespace cleanup and optional filler removal, the vocabulary prompt, paragraphs from segments (a pause over 2 s), `m:ss`. | "Review, copy, edit, delete" |
@@ -30,4 +31,5 @@ swift test       # 43 tests, well under a second
 - **The event tap is listen-only**, so Fn is not swallowed from the frontmost app. With Fn set to Do Nothing, nothing else acts on it anyway.
 - **A microphone change mid-recording stops the recording** and keeps what was recorded (the file's format is the device's), rather than carrying on seamlessly.
 - **Audio stays WAV**; AAC transcoding after 24 h is phase 4. Auto-delete audio after N days is in.
-- **Voice-detection mode, Parakeet A/B, Spotlight exclusion toggle and folder encryption** are not in v0.1.
+- **Voice detection is energy-based**, not Silero VAD: no extra model to download, and it runs on the audio thread for nothing. It can mistake loud steady noise for speech in a quiet room; a neural detector is a drop-in behind the same `VoiceActivity` interface if that turns out to matter. Segments are tagged with their listening session but listed by day like everything else.
+- **Parakeet A/B, Spotlight exclusion toggle and folder encryption** are not in v0.1.

@@ -16,6 +16,15 @@ struct MainWindow: View {
             }
             .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search transcripts")
             .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Toggle(isOn: $model.listening) {
+                        Label(model.capture.isListening ? (model.capture.isSpeaking ? "Hearing you…" : "Listening") : "Voice Detection",
+                              systemImage: model.capture.isListening ? "ear.fill" : "ear")
+                    }
+                    .toggleStyle(.button)
+                    .tint(model.capture.isSpeaking ? .red : .accentColor)
+                    .help("Record by itself whenever you speak; each stretch of speech becomes a recording (⌘⇧L). The menu bar icon pulses while it's on.")
+                }
                 ToolbarItemGroup(placement: .primaryAction) {
                     UpdateStatus(updater: model.updater)
                     Toggle(isOn: $model.showingAll) { Label("All Text", systemImage: "doc.plaintext") }
@@ -30,7 +39,7 @@ struct MainWindow: View {
                 }
             }
             Divider()
-            UsageBar(monitor: model.monitor, transcribing: model.library.transcribing != nil)
+            UsageBar(monitor: model.monitor, transcribing: model.library.transcribing != nil, listening: model.capture.isListening)
         }
         .overlay(alignment: .bottom) {
             if !model.library.pendingDeletes.isEmpty {
@@ -80,7 +89,7 @@ struct EmptyState: View {
                 Text("to make your first recording")
             }
             .font(.system(size: 15))
-            Text("Double-tap it to record hands-free; tap once to stop.")
+            Text("Double-tap it to record hands-free; tap once to stop. Or turn on Voice Detection and just talk.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }
