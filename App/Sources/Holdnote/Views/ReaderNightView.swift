@@ -1,8 +1,8 @@
 import Harness
 import SwiftUI
 
-/// Read overnight: the run card (what will happen, Start, Stop, progress, what the model is
-/// writing as it writes it, the log) and the lenses.
+/// Read overnight, then ask: the run card (what will happen, Start, Stop, progress, what the model
+/// is writing as it writes it, the log), the questions and answers, and the lenses.
 struct ReaderNightView: View {
     @Bindable var model: AppModel
     let go: (ReaderView) -> Void
@@ -20,6 +20,7 @@ struct ReaderNightView: View {
                         .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 runCard
+                ReaderAskSection(model: model)
                 LensList(model: model)
             }
             .padding(24)

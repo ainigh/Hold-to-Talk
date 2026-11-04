@@ -2,16 +2,15 @@ import AppKit
 import Harness
 import SwiftUI
 
-/// The reader's four views, in the order you use them, as they appear in the window's sidebar
-/// under the recordings: Stream, Night, Morning, Notes.
+/// The reader's three views, in the order you use them, as they appear in the window's sidebar
+/// above the recordings: Stream, Night (reading and asking), Notes.
 enum ReaderView: String, CaseIterable, Identifiable {
-    case stream, night, morning, notes
+    case stream, night, notes
     var id: String { rawValue }
     var title: String {
         switch self {
         case .stream: "Stream"
         case .night: "Night"
-        case .morning: "Morning"
         case .notes: "Notes"
         }
     }
@@ -19,7 +18,6 @@ enum ReaderView: String, CaseIterable, Identifiable {
         switch self {
         case .stream: "text.alignleft"
         case .night: "moon.stars"
-        case .morning: "sun.horizon"
         case .notes: "doc.text"
         }
     }
