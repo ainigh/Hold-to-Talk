@@ -73,6 +73,9 @@ struct TranscriptView: View {
                         .frame(width: 200)
                     Text(model.library.transcribing == r.id ? "Transcribing…" : "Waiting to transcribe…")
                         .foregroundStyle(.secondary)
+                    if model.library.transcribing == r.id, !model.library.transcribingNote.isEmpty {
+                        Text(model.library.transcribingNote).font(.caption).foregroundStyle(.tertiary)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if isPlayingThis, !r.segments.isEmpty, !editing {

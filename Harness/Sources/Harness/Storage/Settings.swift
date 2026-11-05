@@ -44,7 +44,8 @@ public struct Settings: Codable, Equatable, Sendable {
     public var deleteAudioAfterDays = 0
     /// The input device's unique ID, or nil for the system default.
     public var inputDeviceID: String?
-    /// Long audio is transcribed in this many parts at once: 0 for automatic, 1 for never.
+    /// Long audio is cut into chunks of about five minutes, transcribed this many at once: 0 for
+    /// automatic (four), 1 for never splitting.
     public var parallelParts = 0
     /// How the list is ordered: by date in day sections, or in the order you dragged it into.
     public enum ListOrder: String, Codable, CaseIterable, Sendable { case newestFirst, custom }

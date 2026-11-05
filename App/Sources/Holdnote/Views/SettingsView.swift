@@ -187,11 +187,11 @@ struct TranscriptionSettings: View {
             }
             Section("Speed") {
                 Picker("Long audio", selection: $settings.parallelParts) {
-                    Text("Split automatically (up to 4 parts)").tag(0)
+                    Text("Split, 4 chunks at a time").tag(0)
                     Text("Don't split").tag(1)
-                    ForEach([2, 3, 4, 6, 8], id: \.self) { Text("\($0) parts at once").tag($0) }
+                    ForEach([2, 3, 6, 8], id: \.self) { Text("Split, \($0) chunks at a time").tag($0) }
                 }
-                Text("Audio over two minutes is cut at quiet moments into parts of at least a minute, transcribed at the same time on the one loaded model, and joined back in order. More parts share the GPU more thinly; try 2–4 on an M1, more on a Max or Ultra. Short clips are never split.")
+                Text("Audio over two minutes is cut at quiet moments into chunks of about five minutes (a two-hour file makes 24), transcribed a few at a time on the one loaded model as each finishes, and joined back in order with any words heard twice at a cut dropped. More at once share the GPU more thinly and each costs memory; 4 suits an M1, more a Max or Ultra. Short clips are never split.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
