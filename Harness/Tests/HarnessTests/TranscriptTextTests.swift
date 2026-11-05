@@ -48,4 +48,10 @@ final class TranscriptTextTests: XCTestCase {
         XCTAssertEqual(TranscriptText.duration(3725), "1:02:05")
         XCTAssertEqual(TranscriptText.duration(-3), "0:00")
     }
+
+    func testWordCount() {
+        XCTAssertEqual(TranscriptText.wordCount(""), 0)
+        XCTAssertEqual(TranscriptText.wordCount("  one  "), 1)
+        XCTAssertEqual(TranscriptText.wordCount("one two\nthree\tfour"), 4)
+    }
 }

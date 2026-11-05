@@ -61,7 +61,7 @@ struct TranscriptView: View {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     Text(failure).font(.system(size: 12)).lineLimit(2)
                     Spacer()
-                    Button("Retry") { model.library.retranscribe(r.id) }.disabled(r.audioFile == nil)
+                    Button("Retry") { model.library.retranscribe(r.id) }.disabled(!r.hasAudio)
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 8)
@@ -100,14 +100,15 @@ struct TranscriptView: View {
                 Text(r.createdAt, format: .dateTime.weekday(.wide).day().month(.wide).hour().minute())
                     .font(.system(size: 13, weight: .medium))
                 HStack(spacing: 6) {
-                    Text(TranscriptText.duration(r.duration))
-                    if let device = r.sourceDevice { Text("· \(device)") }
+                    if let measure = ItemPresentation.measure(of: r) { Text(measure) }
+                    ForEach(ItemPresentation.originWords(of: r), id: \.self) { Text("· \($0)") }
                     if let language = r.language, let name = Locale.current.localizedString(forLanguageCode: language) { Text("· \(name)") }
-                    if r.isEdited { Text("· edited") }
+                    if let edited = ItemPresentation.editedWord(of: r) { Text("· \(edited)") }
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
             }
+            .help(ItemPresentation.origin(of: r) ?? "")
             Spacer()
             if isPlayingThis, model.player.duration > 0 {
                 Slider(value: Binding(get: { model.player.time }, set: { model.player.seek(to: $0) }), in: 0...model.player.duration)
@@ -164,9 +165,11 @@ struct TranscriptView: View {
                 NSApp.sendAction(#selector(NSTextView.moveToEndOfDocument(_:)), to: nil, from: nil)
             } label: { Label("Append", systemImage: "text.append") }
             .help("Add a paragraph at the end. Or hold ⌥ with the hotkey to add by voice.")
-            Button { model.library.retranscribe(r.id) } label: { Label("Re-transcribe", systemImage: "arrow.clockwise") }
-                .disabled(r.audioFile == nil || r.status == .transcribing)
-                .help("Run the transcriber again (after adding to the vocabulary, say). Your edits are kept.")
+            if r.hasAudio {
+                Button { model.library.retranscribe(r.id) } label: { Label("Re-transcribe", systemImage: "arrow.clockwise") }
+                    .disabled(r.status == .transcribing)
+                    .help("Run the transcriber again (after adding to the vocabulary, say). Your edits are kept.")
+            }
             Spacer()
             Button(role: .destructive) { model.library.delete([r.id]); model.selection = [] } label: { Label("Delete", systemImage: "trash") }
                 .help("Delete (⌫). Ten seconds to undo.")

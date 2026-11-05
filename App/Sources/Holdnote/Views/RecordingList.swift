@@ -115,10 +115,10 @@ struct RecordingList: View {
         if r.status == .transcribing, model.library.transcribing == r.id {
             Button("Stop transcribing") { model.library.cancelTranscription() }
         } else {
-            Button("Re-transcribe") { model.library.retranscribe(r.id) }.disabled(r.audioFile == nil || r.status == .transcribing)
+            Button("Re-transcribe") { model.library.retranscribe(r.id) }.disabled(!r.hasAudio || r.status == .transcribing)
         }
         Button("Ask the reader about it") { model.askAbout(r) }.disabled(r.text.isEmpty)
-        if r.audioFile != nil {
+        if r.hasAudio {
             Button("Delete audio, keep text") { model.library.deleteAudio(r.id) }
         }
         if custom {
@@ -164,14 +164,9 @@ struct RecordingRow: View {
                     } else {
                         Text(recording.createdAt, format: .dateTime.hour().minute())
                     }
-                    if recording.audioFile != nil || recording.duration > 0 {
-                        Text("·")
-                        Text(TranscriptText.duration(recording.duration))
-                    }
-                    if recording.isEdited { Text("· edited") }
-                    if recording.audioFile == nil { Text("· text only") }
-                    if recording.sessionID != nil { Text("· heard") }
-                    if recording.sourceDevice?.hasPrefix("Imported") == true { Text("· imported") }
+                    if let measure = ItemPresentation.measure(of: recording) { Text("· \(measure)") }
+                    if let edited = ItemPresentation.editedWord(of: recording) { Text("· \(edited)") }
+                    ForEach(ItemPresentation.originWords(of: recording), id: \.self) { Text("· \($0)") }
                     if let progress, progress > 0 { Text("· \(Int(progress * 100))%") }
                 }
                 .font(.system(size: 11))

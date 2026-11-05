@@ -1,6 +1,6 @@
 # Holdnote — Hold-to-Talk Mac Recorder & Transcriber
 
-A menu-bar-only macOS app: hold **Fn** to record, release to get an editable, copyable transcript, made on this Mac by whisper.cpp. Nothing leaves the machine. `SPEC.md` is the source of truth for recording and transcribing; `READER.md` for the reader, which reads everything you say as you go, through a local model and several lenses at once, asks you about what it can't place, and answers questions about it, citing your words.
+A menu-bar-only macOS app: hold **Fn** to record, release to get an editable, copyable transcript, made on this Mac by whisper.cpp. Nothing leaves the machine. `SPEC.md` is the source of truth for recording and transcribing; `READER.md` for the reader; `VFD.md` names every decision the window makes as an axis, with what a change costs, which reads everything you say as you go, through a local model and several lenses at once, asks you about what it can't place, and answers questions about it, citing your words.
 
 ```
 Harness/   pure Swift package, no UI: the hold gesture, recordings and their folder store, transcript text, settings, the updater's logic, the reader's engine (sentences, lenses, reading in chunks, asking)
