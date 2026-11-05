@@ -2,22 +2,28 @@ import AppKit
 import Harness
 import SwiftUI
 
-/// The reader's three views, in the order you use them, as they appear in the window's sidebar
-/// above the recordings: Stream, Night (reading and asking), Notes.
+/// The reader's views, in the order you use them, as they appear in the window's first column
+/// under Recordings: Ask (your goals, the questions it keeps answered, and anything else), For
+/// you (what it needs you to tell it), Reading (what it is doing, and the lenses), Stream (what
+/// goes in), Notes (the files it writes).
 enum ReaderView: String, CaseIterable, Identifiable {
-    case stream, night, notes
+    case ask, forYou, reading, stream, notes
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .ask: "Ask"
+        case .forYou: "For you"
+        case .reading: "Reading"
         case .stream: "Stream"
-        case .night: "Night"
         case .notes: "Notes"
         }
     }
     var symbol: String {
         switch self {
+        case .ask: "bubble.left.and.text.bubble.right"
+        case .forYou: "questionmark.bubble"
+        case .reading: "eyeglasses"
         case .stream: "text.alignleft"
-        case .night: "moon.stars"
         case .notes: "doc.text"
         }
     }
@@ -58,15 +64,16 @@ struct ReaderBlock<Content: View>: View {
     }
 }
 
-/// A sentence id as a small button: click to see the author's exact words under it.
+/// A sentence id as a small button: click to see the author's exact words under it, and the
+/// recording they were said in, to open (and play).
 struct SentenceIds: View {
     let ids: [String]
     let unread: [String]
-    let lookup: (String) -> String?
+    let model: AppModel
     @State private var open: Set<String> = []
 
-    init(ids: [String], unread: [String] = [], lookup: @escaping (String) -> String?) {
-        self.ids = ids; self.unread = unread; self.lookup = lookup
+    init(ids: [String], unread: [String] = [], model: AppModel) {
+        self.ids = ids; self.unread = unread; self.model = model
     }
 
     var body: some View {
@@ -92,15 +99,86 @@ struct SentenceIds: View {
                     }
                 }
                 ForEach(ids.filter { open.contains($0) }, id: \.self) { id in
-                    HStack(alignment: .top, spacing: 8) {
-                        Text(id).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
-                        Text(lookup(id) ?? "(not found in sentences.txt)").font(.system(size: 12)).textSelection(.enabled)
-                    }
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary.opacity(0.5)))
+                    SentenceQuote(id: id, model: model)
                 }
             }
+        }
+    }
+}
+
+/// One sentence in your words, and the recording it came from (a click opens it).
+struct SentenceQuote: View {
+    let id: String
+    let model: AppModel
+
+    var body: some View {
+        let origin = model.reader.origin(of: id)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 8) {
+                Text(id).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                Text(model.reader.sentence(id) ?? "(not found in sentences.txt)").font(.system(size: 12)).textSelection(.enabled)
+            }
+            if let origin {
+                Button { model.openRecording(origin.id) } label: {
+                    Label("From your recording of \(origin.createdAt.formatted(date: .abbreviated, time: .shortened))", systemImage: origin.audioFile != nil ? "waveform" : "doc.text")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.link)
+                .help("Open the recording\(origin.audioFile != nil ? "; Space plays it" : "")")
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary.opacity(0.5)))
+    }
+}
+
+/// A small coloured label.
+struct Badge: View {
+    let text: String
+    var color: Color = .secondary
+
+    init(_ text: String, _ color: Color = .secondary) { self.text = text; self.color = color }
+
+    var body: some View {
+        Text(text).font(.system(size: 10)).padding(.horizontal, 5).padding(.vertical, 1)
+            .background(Capsule().fill(color.opacity(0.15))).foregroundStyle(color == .secondary ? Color.secondary : color)
+    }
+}
+
+/// A rounded panel, the reader's cards.
+struct Card<Content: View>: View {
+    var padding: CGFloat = 12
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) { content() }
+            .padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(0.4)))
+    }
+}
+
+/// The reader's page: a title, a line under it, and its sections, in a column of readable width.
+struct ReaderPage<Content: View>: View {
+    let title: String
+    let lede: String
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title).font(.title2.weight(.semibold))
+                    if !lede.isEmpty {
+                        Text(lede).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                content()
+            }
+            .padding(24)
+            .frame(maxWidth: 760, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

@@ -50,14 +50,14 @@ struct MainWindow: View {
                     .help("Copy every transcript in the list, in the list's order (⌘⇧C)")
                     .disabled(model.listed.isEmpty)
                 Button {
-                    if reader.running { reader.stopAfterCall() } else { model.showReader(.night); reader.startNight() }
+                    if reader.running { reader.stopAfterCall() } else { model.showReader(.reading); reader.startReading() }
                 } label: {
-                    Label(reader.running ? (reader.stopping ? "Stopping…" : "Stop after this call") : reader.startTitle,
-                          systemImage: reader.running ? "stop.circle" : "moon.fill")
+                    Label(reader.running ? (reader.stopping ? "Stopping…" : "Pause reading") : reader.startTitle,
+                          systemImage: reader.running ? "pause.circle" : "eyeglasses")
                 }
-                .disabled(reader.running ? reader.stopping : reader.blocker != nil)
-                .help(reader.running ? "Finish the call in progress, save progress, then stop. Resume later from the same place."
-                      : (reader.blocker?.text ?? "The reader: read everything unread through every lens, then answer the overnight questions"))
+                .disabled(reader.running ? reader.stopping : (reader.blocker != nil || !reader.hasWork))
+                .help(reader.running ? "Finish the call in progress, save, then pause. Read now carries on from the same place."
+                      : (reader.blocker?.text ?? (reader.hasWork ? "Read what's new through every lens now, then answer the questions about your goals (it also does this by itself)" : "The reader has read everything you've said")))
             }
         }
         .overlay(alignment: .bottom) {
@@ -68,12 +68,21 @@ struct MainWindow: View {
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: model.library.pendingDeletes.count)
-        // Audio and text files (or loose text) dropped anywhere on the window join the list. The
-        // stream's own box, deeper in, keeps the text dropped on it; the list places what lands between its rows.
+        // Audio and text files (or loose text) dropped anywhere on the window join the list (and so
+        // the stream). The stream's own box, deeper in, keeps the text dropped on it; the list
+        // places what lands between its rows.
         .onDrop(of: [.fileURL, .plainText], isTargeted: nil) { providers in model.takeDrop(providers) }
         .frame(minWidth: 960, minHeight: 560)
         .onAppear { reader.refreshStream(); reader.refreshFiles() }
-        .onChange(of: model.library.recordings.count) { _, _ in reader.libraryChanged() }
+        // A transcript finishing changes no count, so the reader is told about any change in status or text.
+        .onChange(of: libraryFingerprint) { _, _ in reader.libraryChanged() }
+    }
+
+    /// Changes when a recording is added, removed, finishes or is edited.
+    private var libraryFingerprint: Int {
+        var h = Hasher()
+        for r in model.library.recordings { h.combine(r.id); h.combine(r.status); h.combine(r.text.count) }
+        return h.finalize()
     }
 
     /// The second column, for the sections that have a list to choose from.
@@ -98,8 +107,10 @@ struct MainWindow: View {
     private var detail: some View {
         switch model.section {
         case .recordings: recordings
+        case .reader(.ask): ReaderAskView(model: model, go: { model.showReader($0) })
+        case .reader(.forYou): ReaderForYouView(model: model, go: { model.showReader($0) })
+        case .reader(.reading): ReaderReadingView(model: model, go: { model.showReader($0) })
         case .reader(.stream): ReaderStreamView(model: model, go: { model.showReader($0) })
-        case .reader(.night): ReaderNightView(model: model, go: { model.showReader($0) })
         case .reader(.notes): NotesEditor(model: model)
         case .readerGuide: ReaderAboutView()
         case let .settings(tab): SettingsPage(model: model, tab: tab)
@@ -148,6 +159,9 @@ struct EmptyState: View {
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
             Text("Audio files (an m4a from Voice Memos, say) and text files can be dropped here, or added with ⌘⇧I.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            Text("Everything you record is read by the reader as you go: it asks you about what it can't place, and answers what you ask about it (⌘2).")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }

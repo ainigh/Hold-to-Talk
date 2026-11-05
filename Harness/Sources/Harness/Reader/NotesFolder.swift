@@ -90,8 +90,8 @@ public struct ReaderError: Error, LocalizedError, Sendable {
     public static let cancelled = ReaderError("cancelled", cancelled: true)
 }
 
-/// Resume state for the night: where each lens has read to, its notebook and entries so far,
-/// and the question pass. Written after every window.
+/// Where reading stands: how far each lens has read, its notebook and entries so far, and the
+/// questions about the goals with their answers. Written after every call.
 public struct ReaderProgress: Codable, Equatable, Sendable {
     public struct LensState: Codable, Equatable, Sendable {
         public var pos = 0
@@ -118,27 +118,27 @@ public struct ReaderProgress: Codable, Equatable, Sendable {
         public var answer: String
         public var evidence: [String]
         public var opened: [String]
-        public init(q: String, answer: String, evidence: [String], opened: [String]) { self.q = q; self.answer = answer; self.evidence = evidence; self.opened = opened }
+        /// How many sentences the stream had when this was answered (nil: before this was kept).
+        public var asOf: Int?
+        public var at: Date?
+        public init(q: String, answer: String, evidence: [String], opened: [String], asOf: Int? = nil, at: Date? = nil) {
+            self.q = q; self.answer = answer; self.evidence = evidence; self.opened = opened; self.asOf = asOf; self.at = at
+        }
     }
 
-    public var key: String?
     public var lenses: [String: LensState] = [:]
+    /// The questions generated from the goals (nil: not yet), and the goals they came from.
     public var questions: [String]?
-    public var qIndex = 0
+    public var qGoals: String?
     public var qa: [QA] = []
-    public var qPos: Int?
-    public var questionsDone = false
 
     public init() {}
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        key = try c.decodeIfPresent(String.self, forKey: .key)
         lenses = try c.decodeIfPresent([String: LensState].self, forKey: .lenses) ?? [:]
         questions = try c.decodeIfPresent([String].self, forKey: .questions)
-        qIndex = try c.decodeIfPresent(Int.self, forKey: .qIndex) ?? 0
+        qGoals = try c.decodeIfPresent(String.self, forKey: .qGoals)
         qa = try c.decodeIfPresent([QA].self, forKey: .qa) ?? []
-        qPos = try c.decodeIfPresent(Int.self, forKey: .qPos)
-        questionsDone = try c.decodeIfPresent(Bool.self, forKey: .questionsDone) ?? false
     }
 
     public static func load(_ folder: NotesFolder) -> ReaderProgress {

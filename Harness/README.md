@@ -4,7 +4,7 @@ The app's behaviour as a pure Swift package with no UI import, so every push tes
 
 ```
 swift build      # zero warnings
-swift test       # 58 tests, well under a second
+swift test       # 78 tests, well under a second
 ```
 
 | Module | What it does | Spec section |
@@ -21,11 +21,11 @@ swift test       # 58 tests, well under a second
 | `Model/Usage` | A usage sample (system and Holdnote CPU, memory, thermal state) and its words: the meters' labels, the menu's lines, the explanation. The app's `SystemMonitor` fills it from Mach. | — |
 | `Update/Release` | Versions, GitHub releases and commits, and the update plan (download GitHub's build, or build here). From ainigh/Layered. | — |
 | `Reader/Sentences` | The stream as numbered sentences (`s00001`…): splitting on sentence punctuation and line breaks, long sentences wrapped, ids normalised from what a model writes. | READER.md, "The idea" |
-| `Reader/LensParse` | Lenient readers for the plain-line formats the model writes: lens entries and the NOTEBOOK section, question lists, the morning's OPEN / READ / ANSWER action. | READER.md |
-| `Reader/Lens`, `Reader/ReaderConfig` | The eight default lenses and the budgets (W, M, output cap, cool-off…), with the extension's minimums. | READER.md, "The lenses", "Budgets" |
-| `Reader/Night` | The overnight passes: windows packed by estimated tokens, the carried notebook (compressed, then cut, when over M), the prior-lens digest, the question pass; resumable through `progress.json`. | READER.md |
-| `Reader/Morning` | One question answered with two tools, open a file page or read sentences by id, within the window; cited ids it never read are reported. | READER.md |
-| `Reader/Stream` | Adding text and Holdnote's transcripts to the stream (each recording once), the state and the estimate, the reader's questions and your answers, corrections, the conversation. | READER.md, "Files written" |
+| `Reader/LensParse` | Lenient readers for the plain-line formats the model writes: one reply's sections per lens (`=== ledger ===`, `## Ledger`, `**Ledger**`…), lens entries and the NOTEBOOK section, question lists, the OPEN / READ / ANSWER action. | READER.md |
+| `Reader/Lens`, `Reader/ReaderConfig` | The eight default lenses and the budgets (W, M, output cap, sentences at a time, lenses per call, rest between calls…), with their minimums. | READER.md, "The lenses", "Budgets" |
+| `Reader/Reading` | Reading: a small chunk at a time through every lens at once, lenses grouped into calls by the window and the output cap, a lens left out of a reply read alone, notebooks carried (compressed, then cut, when over M), a lens that is behind catching up alone; then the questions about the goals, written once and refreshed as the stream grows; resumable through `progress.json`. | READER.md |
+| `Reader/Asking` | One question answered with two tools, open a file page or read sentences by id, within the window, optionally about one recording's sentences; cited ids it never read are reported. | READER.md |
+| `Reader/ReaderStream` | Adding text and Holdnote's transcripts to the stream (each recording once, once it settles; a corrected one again as a revision), which recording each sentence came from, the state and the estimate, the reader's questions (settled ones dropped) and your answers (spoken ones tied to their recording), pinned questions, corrections, the conversation. | READER.md, "Files written" |
 | `Reader/ChatModel`, `Reader/NotesFolder`, `Reader/Tokens` | The model behind a `ChatModel` protocol (the app's `OllamaClient`; tests use a fake) with the prompt measured and refused over budget; plain files in the folder; the character-based token estimate, calibrated after every call. | READER.md, "Budgets" |
 
 ## Decisions where the spec was open, and where v0.1 stops short
@@ -38,6 +38,6 @@ swift test       # 58 tests, well under a second
 - **The event tap is listen-only**, so Fn is not swallowed from the frontmost app. With Fn set to Do Nothing, nothing else acts on it anyway.
 - **A microphone change mid-recording stops the recording** and keeps what was recorded (the file's format is the device's), rather than carrying on seamlessly.
 - **Audio stays WAV**; AAC transcoding after 24 h is phase 4. Auto-delete audio after N days is in.
-- **The reader is the Night Reader extension's engine, ported line for line**, with Ollama behind a protocol so the night and the morning run end to end in the tests on a fake model. Transcripts join the stream once each, under a date line, so "at what point" can be answered in calendar time; the extension's folder picker became a folder in Application Support, its Chrome storage became UserDefaults and `chat.json`, its keep-awake became `ProcessInfo.beginActivity`, and a scheduled start was added because a menu bar app can start the night without anyone opening a window.
+- **The reader started as the Night Reader extension's engine** and now reads any time: a small chunk at a time through every lens at once rather than one full pass per lens overnight, so what you said is read within minutes and the questions for you arrive while you still remember. Ollama is behind a protocol, so reading and asking run end to end in the tests on a fake model. Transcripts join the stream once each, under a date line, so "at what point" can be answered in calendar time, and each sentence remembers its recording. The extension's folder picker became a folder in Application Support, its Chrome storage became UserDefaults and `chat.json`, and its keep-awake became `ProcessInfo.beginActivity`.
 - **Voice detection is energy-based**, not Silero VAD: no extra model to download, and it runs on the audio thread for nothing. It can mistake loud steady noise for speech in a quiet room; a neural detector is a drop-in behind the same `VoiceActivity` interface if that turns out to matter. Segments are tagged with their listening session but listed by day like everything else.
 - **Parakeet A/B, Spotlight exclusion toggle and folder encryption** are not in v0.1.

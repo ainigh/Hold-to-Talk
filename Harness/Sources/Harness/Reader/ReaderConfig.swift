@@ -6,29 +6,42 @@ public struct ReaderConfig: Codable, Equatable, Sendable {
     public var model = ""
     /// Prompt window, tokens (W).
     public var windowTokens = 6000
-    /// Notebook cap, tokens (M).
+    /// Notebook cap per lens, tokens (M).
     public var notebookTokens = 800
     public var digestTokens = 700
-    public var outputTokens = 1500
-    public var questionCount = 30
-    public var morningSteps = 8
+    /// The most the model may write in one reply. Several lenses share one reply, so this also
+    /// limits how many go into one call.
+    public var outputTokens = 3000
+    /// Questions about your goals the reader keeps answered.
+    public var questionCount = 12
+    /// Tool steps the model may take before it must answer a question.
+    public var askSteps = 8
     public var pageTokens = 1500
     public var charsPerToken = 3.6
-    public var coolOffSec = 60
+    /// A rest after every model call while reading, so a larger model runs at a sustainable temperature.
+    public var coolOffSec = 20
     public var think = false
-    /// Sentences per window (0: as many as fit).
-    public var maxSentences = 0
+    /// Sentences read at a time (0: as many as fit). Small chunks mean new words are read soon after they are said.
+    public var chunkSentences = 16
+    /// Lenses in one call (0: as many as fit the window and the output cap; 1: one call per lens).
+    public var lensesPerCall = 0
     public var keepAwake = true
-    /// Holdnote's own transcripts join the stream when a night starts.
+    /// Holdnote's own transcripts join the stream by themselves once they settle.
     public var feedTranscripts = true
-    /// Start a night by itself at this time of day (minutes after midnight), when set.
-    public var scheduleEnabled = false
-    public var scheduleMinute = 60
+    /// A transcript joins once it has been final and unedited for this long.
+    public var settleSeconds = 60
+    /// Read by itself whenever there is something new (and nothing is being recorded or transcribed).
+    public var autoRead = true
+    /// A question's answer is refreshed once the stream has grown by this many sentences since.
+    public var questionRefresh = 60
 
     public init() {}
 
+    enum Legacy: String, CodingKey { case morningSteps }
+
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try decoder.container(keyedBy: Legacy.self)
         var d = ReaderConfig()
         d.base = try c.decodeIfPresent(String.self, forKey: .base) ?? d.base
         d.model = try c.decodeIfPresent(String.self, forKey: .model) ?? d.model
@@ -37,23 +50,25 @@ public struct ReaderConfig: Codable, Equatable, Sendable {
         d.digestTokens = try c.decodeIfPresent(Int.self, forKey: .digestTokens) ?? d.digestTokens
         d.outputTokens = try c.decodeIfPresent(Int.self, forKey: .outputTokens) ?? d.outputTokens
         d.questionCount = try c.decodeIfPresent(Int.self, forKey: .questionCount) ?? d.questionCount
-        d.morningSteps = try c.decodeIfPresent(Int.self, forKey: .morningSteps) ?? d.morningSteps
+        d.askSteps = try c.decodeIfPresent(Int.self, forKey: .askSteps) ?? legacy.decodeIfPresent(Int.self, forKey: .morningSteps) ?? d.askSteps
         d.pageTokens = try c.decodeIfPresent(Int.self, forKey: .pageTokens) ?? d.pageTokens
         d.charsPerToken = try c.decodeIfPresent(Double.self, forKey: .charsPerToken) ?? d.charsPerToken
         d.coolOffSec = try c.decodeIfPresent(Int.self, forKey: .coolOffSec) ?? d.coolOffSec
         d.think = try c.decodeIfPresent(Bool.self, forKey: .think) ?? d.think
-        d.maxSentences = try c.decodeIfPresent(Int.self, forKey: .maxSentences) ?? d.maxSentences
+        d.chunkSentences = try c.decodeIfPresent(Int.self, forKey: .chunkSentences) ?? d.chunkSentences
+        d.lensesPerCall = try c.decodeIfPresent(Int.self, forKey: .lensesPerCall) ?? d.lensesPerCall
         d.keepAwake = try c.decodeIfPresent(Bool.self, forKey: .keepAwake) ?? d.keepAwake
         d.feedTranscripts = try c.decodeIfPresent(Bool.self, forKey: .feedTranscripts) ?? d.feedTranscripts
-        d.scheduleEnabled = try c.decodeIfPresent(Bool.self, forKey: .scheduleEnabled) ?? d.scheduleEnabled
-        d.scheduleMinute = try c.decodeIfPresent(Int.self, forKey: .scheduleMinute) ?? d.scheduleMinute
+        d.settleSeconds = try c.decodeIfPresent(Int.self, forKey: .settleSeconds) ?? d.settleSeconds
+        d.autoRead = try c.decodeIfPresent(Bool.self, forKey: .autoRead) ?? d.autoRead
+        d.questionRefresh = try c.decodeIfPresent(Int.self, forKey: .questionRefresh) ?? d.questionRefresh
         self = d.clamped()
     }
 
     /// Ollama's context size: W plus the output cap plus a margin, so it never silently truncates.
     public var numCtx: Int { windowTokens + outputTokens + 512 }
 
-    /// The minimums the extension enforced, applied.
+    /// The minimums, applied.
     public func clamped() -> ReaderConfig {
         var c = self
         c.base = Self.normalizeBase(c.base)
@@ -62,12 +77,14 @@ public struct ReaderConfig: Codable, Equatable, Sendable {
         c.digestTokens = max(0, c.digestTokens)
         c.outputTokens = max(200, c.outputTokens)
         c.questionCount = max(0, c.questionCount)
-        c.morningSteps = max(1, c.morningSteps)
+        c.askSteps = max(1, c.askSteps)
         c.pageTokens = max(200, c.pageTokens)
         c.charsPerToken = min(5, max(2, c.charsPerToken.isFinite ? c.charsPerToken : 3.6))
         c.coolOffSec = max(0, c.coolOffSec)
-        c.maxSentences = max(0, c.maxSentences)
-        c.scheduleMinute = min(24 * 60 - 1, max(0, c.scheduleMinute))
+        c.chunkSentences = max(0, c.chunkSentences)
+        c.lensesPerCall = max(0, c.lensesPerCall)
+        c.settleSeconds = max(0, c.settleSeconds)
+        c.questionRefresh = max(1, c.questionRefresh)
         return c
     }
 
@@ -80,7 +97,4 @@ public struct ReaderConfig: Codable, Equatable, Sendable {
         if !s.lowercased().hasPrefix("http://"), !s.lowercased().hasPrefix("https://") { s = "http://" + s }
         return s
     }
-
-    /// progress.json is only valid for the window and notebook sizes it was written under.
-    public var progressKey: String { "\(windowTokens):\(notebookTokens)" }
 }

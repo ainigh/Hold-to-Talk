@@ -1,8 +1,8 @@
 import Foundation
 
-/// The morning: one question answered with exactly two moves, open a note file (one page at a
-/// time) or read sentences by id. The model replies in plain lines; `LensParse.action` reads them.
-public enum Morning {
+/// Asking: one question answered with exactly two moves, open a note file (one page at a time)
+/// or read sentences by id. The model replies in plain lines; `LensParse.action` reads them.
+public enum Asking {
     public struct TraceStep: Codable, Equatable, Sendable {
         public var action: String
         public var file: String
@@ -29,13 +29,17 @@ public enum Morning {
         public var onCall: (@Sendable (String, String, String) -> Void)?
         public var onToken: (@Sendable (String, String) -> Void)?
         public var log: (@Sendable (String) -> Void)?
+        /// What the question is about, said to the model (e.g. "your recording of Tuesday 14:05").
+        public var about: String?
+        /// Sentence ids the question is about; the model is told to read them first.
+        public var focus: [String] = []
         public init() {}
     }
 
     public static func system(goals: String, toc: String, corrections: String) -> String {
         let id42 = Sentences.makeId(42), id43 = Sentences.makeId(43)
         var s = """
-        You answer questions about the author's own written stream of thoughts. Overnight the stream was read several times and notes were written into files; every note line cites sentence ids like \(id42). You cannot see the stream directly.
+        You answer questions about the author's own stream of thoughts, spoken and written. The stream has been read through several lenses and notes were written into files; every note line cites sentence ids like \(id42). You cannot see the stream directly.
 
         Each turn, reply with exactly ONE action, in this plain format and nothing else:
 
@@ -95,7 +99,7 @@ public enum Morning {
         let corrections = folder.read("corrections.md") ?? ""
         let byId = Dictionary(sentences.map { ($0.id, $0.text) }, uniquingKeysWith: { a, _ in a })
         let tocLines = tableOfContents(folder: folder, lenses: lenses, includeQuestions: options.includeQuestions)
-        let system = Self.system(goals: goals, toc: tocLines.isEmpty ? "(no note files yet; the night has not run)" : tocLines.joined(separator: "\n"),
+        let system = Self.system(goals: goals, toc: tocLines.isEmpty ? "(no note files yet; nothing has been read)" : tocLines.joined(separator: "\n"),
                                  corrections: tokens.clip(corrections, 600).text)
         var steps: [(action: String, result: String)] = []
         var trace: [TraceStep] = []
@@ -104,6 +108,10 @@ public enum Morning {
 
         func buildUser(final: Bool) -> String {
             var parts = ["## Question\n\(question)"]
+            if !options.focus.isEmpty {
+                let ids = options.focus.count > 2 ? "\(options.focus[0])–\(options.focus[options.focus.count - 1])" : options.focus.joined(separator: ", ")
+                parts[0] += "\n\nThis question is about \(options.about ?? "a part of the stream"): sentences \(ids). READ them first, then open notes if you need more."
+            }
             let fixed = tokens.estimate(system) + tokens.estimate(parts[0]) + 120
             let budget = config.windowTokens - fixed
             var shown = steps
@@ -116,16 +124,16 @@ public enum Morning {
                 i += 1
             }
             for (k, s) in shown.enumerated() { parts.append("## Step \(k + 1)\nYou did: \(s.action)\nResult:\n\(s.result)") }
-            parts.append(final ? "## Now answer\nYou have used all your steps. Reply with ANSWER now, with what you have, citing only ids you read." : "## Next action (step \(steps.count + 1) of \(config.morningSteps))")
+            parts.append(final ? "## Now answer\nYou have used all your steps. Reply with ANSWER now, with what you have, citing only ids you read." : "## Next action (step \(steps.count + 1) of \(config.askSteps))")
             return parts.joined(separator: "\n\n")
         }
 
-        for step in 0...config.morningSteps {
-            let final = step == config.morningSteps
+        for step in 0...config.askSteps {
+            let final = step == config.askSteps
             let user = buildUser(final: final)
             options.onStep?(final ? "writing the answer" : step == 0 ? "deciding where to look" : "step \(step + 1): deciding what to do next")
-            options.onCall?("Morning, step \(step + 1) of \(config.morningSteps + 1)", system, user)
-            let res = try await chat.call(ChatRequest(system: system, user: user, label: "morning s\(step + 1)", onToken: options.onToken), config: config, budget: config.windowTokens)
+            options.onCall?("Asking, step \(step + 1) of \(config.askSteps + 1)", system, user)
+            let res = try await chat.call(ChatRequest(system: system, user: user, label: "ask s\(step + 1)", onToken: options.onToken), config: config, budget: config.windowTokens)
             let a = LensParse.action(res.text)
             switch a {
             case let .open(file, offset, why): trace.append(TraceStep(action: "open", file: file, offset: offset, ids: [], why: why))
@@ -148,7 +156,7 @@ public enum Morning {
                 let answer = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 return Answer(answer: answer.isEmpty ? "(no answer given)" : answer, evidence: ev, unread: unread, steps: steps.count, trace: trace, opened: opened)
             }
-            // Cool off between tool steps only (overnight); the caller rests after the answer itself.
+            // Rest between tool steps only while reading; the caller rests after the answer itself.
             if options.coolOffSec > 0 {
                 let until = Date().addingTimeInterval(Double(options.coolOffSec))
                 while Date() < until, !options.stopped() {

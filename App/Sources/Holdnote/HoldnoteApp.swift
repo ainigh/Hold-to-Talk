@@ -43,26 +43,30 @@ struct HoldnoteApp: App {
             }
             CommandMenu("Reader") {
                 Button("Open the Reader") { model.showReader() }.keyboardShortcut("n", modifiers: [.command, .shift])
-                Button("Stream") { model.showReader(.stream) }
-                Button("Night") { model.showReader(.night) }
-                Button("Notes") { model.showReader(.notes) }
+                ForEach(ReaderView.allCases) { v in
+                    Button(v.title) { model.showReader(v) }
+                }
                 Divider()
                 if model.reader.running {
-                    Button("Stop the Night After This Call") { model.reader.stopAfterCall() }.disabled(model.reader.stopping)
-                    Button("Stop the Night Now") { model.reader.stopNow() }
+                    Button("Stop Reading After This Call") { model.reader.stopAfterCall() }.disabled(model.reader.stopping)
+                    Button("Stop Reading Now") { model.reader.stopNow() }
                 } else {
-                    Button(model.reader.startTitle) { model.showReader(.night); model.reader.startNight() }.disabled(model.reader.blocker != nil)
+                    Button("Read Now") { model.reader.startReading() }.disabled(model.reader.blocker != nil || !model.reader.hasWork)
+                        .keyboardShortcut("r", modifiers: [.command, .option])
                 }
-                Button("Add Transcripts to the Stream") { _ = model.reader.feedTranscripts() }.disabled(model.reader.running)
+                Toggle("Read by Itself", isOn: Binding(get: { model.reader.config.autoRead }, set: { model.reader.config.autoRead = $0; if $0 { model.reader.resumeAuto() } }))
+                Button("Add Transcripts to the Stream Now") { _ = model.reader.feedTranscripts() }
                 Divider()
                 Button("Show Reader Folder in Finder") { model.reader.showFolderInFinder() }
                 Button("About the Reader") { model.showReaderAbout() }
             }
             CommandGroup(after: .toolbar) {
                 Button("Recordings") { model.show(.recordings) }.keyboardShortcut("1", modifiers: .command)
-                Button("Stream") { model.showReader(.stream) }.keyboardShortcut("2", modifiers: .command)
-                Button("Night") { model.showReader(.night) }.keyboardShortcut("3", modifiers: .command)
-                Button("Notes") { model.showReader(.notes) }.keyboardShortcut("4", modifiers: .command)
+                Button("Ask") { model.showReader(.ask) }.keyboardShortcut("2", modifiers: .command)
+                Button("Questions for You") { model.showReader(.forYou) }.keyboardShortcut("3", modifiers: .command)
+                Button("Reading") { model.showReader(.reading) }.keyboardShortcut("4", modifiers: .command)
+                Button("Stream") { model.showReader(.stream) }.keyboardShortcut("5", modifiers: .command)
+                Button("Notes") { model.showReader(.notes) }.keyboardShortcut("6", modifiers: .command)
                 Divider()
                 Button("Setup") { model.showSetup() }
             }
@@ -95,7 +99,7 @@ final class AppModel {
     let updater = Updater()
     /// CPU and memory, the Mac's and Holdnote's share, for the window's bottom bar and the menu.
     let monitor = SystemMonitor()
-    /// The reader: the stream, the night (reading and asking), the notes.
+    /// The reader: the stream, reading it, asking about it, its questions for you, the notes.
     let reader = ReaderController()
     /// What the window shows: the first column lists these; choosing one opens the columns it
     /// needs (the recordings list, the note files, the settings pages) and its page on the right.
@@ -113,7 +117,7 @@ final class AppModel {
         }
     }
     /// The reader view last shown, where "Open the Reader" goes.
-    var readerView: ReaderView = .stream
+    var readerView: ReaderView = .ask
     /// The settings page last shown.
     var settingsTab: SettingsTab = .general
     /// Set by the updater, which quits to swap the app.
@@ -144,6 +148,17 @@ final class AppModel {
         library.settings = { [settings] in settings.settings }
         // The list read from the bottom up: what happened first goes into the stream first.
         reader.recordings = { [library] in Array(library.ordered.reversed()) }
+        reader.recording = { [library] id in library.recording(id) }
+        // Whisper and the model share the Mac: reading waits while you record or transcribe.
+        reader.isBusy = { [capture, library] in capture.isRecording || library.transcribing != nil }
+        reader.isWindowKey = { [weak self] in self?.window?.isKeyWindow ?? false }
+        // A spoken answer to one of the reader's questions: the next recording, once transcribed.
+        library.onFinal = { [weak self] r in
+            guard let self, self.reader.voiceAnswer != nil else { return }
+            if self.reader.transcriptFinished(r), !(self.window?.isKeyWindow ?? false) {
+                Notifier.post(title: "Answer saved", body: "Your spoken answer joined the reader's stream.", open: ReaderView.forYou.rawValue)
+            }
+        }
     }
 
     /// Once the app has launched.
@@ -159,7 +174,8 @@ final class AppModel {
         }
         statusBar = StatusBarController(model: self)
         library.load()
-        Notifier.shared.start { [weak self] in self?.updater.confirmInstall() }
+        Notifier.shared.start(onInstall: { [weak self] in self?.updater.confirmInstall() },
+                              onOpen: { [weak self] v in self?.showReader(ReaderView(rawValue: v)) })
         updater.start()
         capture.onToggleWindow = { [weak self] in self?.toggleWindow() }
         capture.selectedForAppend = { [weak self] in
@@ -191,7 +207,7 @@ final class AppModel {
         library.saveNow()
         library.commitDeletes()
         capture.interrupt(reason: nil)
-        // The night saves after every window; cutting the call short loses only that window.
+        // Reading saves after every call; cutting the call short loses only that chunk.
         reader.stopNow()
     }
 
@@ -269,7 +285,16 @@ final class AppModel {
         show(.reader(view ?? readerView))
     }
 
-    /// What the reader does and why, from the extension's spec.
+    /// A recording in the list, selected and shown (from a sentence id, a question, the stream).
+    func openRecording(_ id: UUID) {
+        guard library.recording(id) != nil else { NSSound.beep(); return }
+        showingAll = false
+        if !listed.contains(where: { $0.id == id }) { searchText = "" }
+        show(.recordings)
+        selection = [id]
+    }
+
+    /// What the reader does and why.
     func showReaderAbout() {
         show(.readerGuide)
     }

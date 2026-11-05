@@ -4,8 +4,8 @@ import SwiftUI
 
 /// The window's first column: everything Holdnote has, one row each. Choosing a row opens the
 /// columns it needs to the right. Under the rows, what the menu bar menu used to hold: voice
-/// detection, the hotkey, the microphone, a recording in progress, the night's progress, updates,
-/// and Quit.
+/// detection, the hotkey, the microphone, a recording in progress, what the reader is doing,
+/// updates, and Quit.
 struct MenuColumn: View {
     @Bindable var model: AppModel
 
@@ -17,6 +17,19 @@ struct MenuColumn: View {
                 Section("Holdnote") {
                     row("Recordings", symbol: "waveform", meta: model.library.recordings.isEmpty ? "" : model.library.recordings.count.formatted())
                         .tag(Item.recordings)
+                }
+                if let gap = reader.voiceAnswer {
+                    Section {
+                        Button { model.showReader(.forYou) } label: {
+                            Label {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text("Hold \(model.settings.settings.hotkey.glyph) to answer").font(.system(size: 12, weight: .medium))
+                                    Text(gap.question).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(2)
+                                }
+                            } icon: { Image(systemName: "mic.fill").foregroundStyle(.red) }
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 Section("Reader") {
                     ForEach(ReaderView.allCases) { v in
@@ -99,17 +112,17 @@ struct MenuColumn: View {
             .help(model.capture.paused ? "The hotkey is paused; turn on to record with it again" : "Hold the key to record; turn off to pause it")
             MicrophonePicker(model: model)
             if reader.running {
-                Button { model.showReader(.night) } label: {
+                Button { model.showReader(.reading) } label: {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 6) {
-                            Image(systemName: "moon.fill").foregroundStyle(Color.accentColor)
-                            Text(reader.status.isEmpty ? "Reading" : reader.status).font(.system(size: 11)).lineLimit(2)
+                            Image(systemName: "eyeglasses").foregroundStyle(Color.accentColor)
+                            Text(readingLine).font(.system(size: 11)).lineLimit(2)
                         }
                         ProgressView(value: Double(min(100, max(0, reader.percent))), total: 100).controlSize(.small)
                     }
                 }
                 .buttonStyle(.plain)
-                .help("Open the Night view")
+                .help("Open the Reading view")
             }
             if isReaderSection { readerLines }
             Divider()
@@ -159,6 +172,12 @@ struct MenuColumn: View {
         }
     }
 
+    private var readingLine: String {
+        if let c = reader.chunk { return "Reading \(c.from)–\(c.to)" }
+        if let q = reader.questionInfo, !q.current.isEmpty { return "Answering \(q.done + 1) of \(q.total)" }
+        return reader.status.isEmpty ? "Reading" : reader.status
+    }
+
     private var ollamaLine: String {
         switch reader.ollama {
         case .checking: "checking…"
@@ -182,21 +201,27 @@ struct MenuColumn: View {
 
     private func meta(_ v: ReaderView) -> String {
         switch v {
-        case .stream:
-            if let g = reader.gaps, !g.open.isEmpty { return "\(g.open.count) question\(g.open.count == 1 ? "" : "s")" }
-            return reader.stream.count > 0 ? reader.stream.count.formatted() : ""
-        case .night:
+        case .ask:
+            if reader.asking { return "asking…" }
+            let n = reader.questions.count
+            return n == 0 ? "" : "\(reader.questions.filter { reader.answers[$0] != nil }.count)/\(n)"
+        case .forYou:
+            let n = reader.gaps?.open.count ?? 0
+            return n > 0 ? n.formatted() : ""
+        case .reading:
             if reader.running { return "\(reader.percent)%" }
             if reader.stream.unread > 0 { return "\(reader.stream.unread.formatted()) unread" }
-            return reader.notesCount > 0 ? "\(reader.notesCount) note\(reader.notesCount == 1 ? "" : "s")" : ""
+            return ""
+        case .stream: return reader.stream.count > 0 ? reader.stream.count.formatted() : ""
         case .notes: return reader.files.isEmpty ? "" : reader.files.count.formatted()
         }
     }
 
     private func attention(_ v: ReaderView) -> Bool {
         switch v {
-        case .stream: (reader.gaps?.open.isEmpty == false) || (reader.folder != nil && reader.stream.count == 0 && !reader.stream.rawPresent)
-        case .night: !reader.running && reader.stream.unread > 0 && reader.ollamaOK
+        case .forYou: (reader.gaps?.open.isEmpty == false) || reader.voiceAnswer != nil
+        case .stream: reader.folder != nil && reader.stream.count == 0 && !reader.stream.rawPresent && reader.unfedCount == 0
+        case .reading: !reader.running && reader.stream.unread > 0 && reader.ollamaOK && !reader.config.autoRead
         default: false
         }
     }

@@ -21,6 +21,8 @@ final class Library {
     @ObservationIgnored private var samplesInMemory: [UUID: [Float]] = [:]
     @ObservationIgnored private var saveTimers: [UUID: Timer] = [:]
     @ObservationIgnored var settings: () -> Settings = { Settings() }
+    /// A recording's transcript is in (not one spoken onto another recording).
+    @ObservationIgnored var onFinal: ((Recording) -> Void)?
     /// Something went wrong loading (said in the window, once).
     private(set) var loadProblems: [String] = []
     /// The order you dragged the list into (ids, top first), used when Settings says so.
@@ -258,6 +260,7 @@ final class Library {
             }
             recordings[i].replaceMachineText(text, segments: result.segments, language: result.language, model: result.model)
             try? store.save(recordings[i])
+            onFinal?(recordings[i])
         case let .failure(error):
             recordings[i].status = .failed
             recordings[i].failure = error.localizedDescription

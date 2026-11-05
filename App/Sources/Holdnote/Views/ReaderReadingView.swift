@@ -1,9 +1,9 @@
 import Harness
 import SwiftUI
 
-/// Read overnight, then ask: the run card (what will happen, Start, Stop, progress, what the model
-/// is writing as it writes it, the log), the questions and answers, and the lenses.
-struct ReaderNightView: View {
+/// Reading: what the reader is doing (the chunk in hand and which lenses have read it, what the
+/// model is writing as it writes it, the log), how far it has come, and the lenses themselves.
+struct ReaderReadingView: View {
     @Bindable var model: AppModel
     let go: (ReaderView) -> Void
     @State private var showPrompt = false
@@ -12,19 +12,9 @@ struct ReaderNightView: View {
     private var reader: ReaderController { model.reader }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Read overnight").font(.title2.weight(.semibold))
-                    Text("Each lens is one full pass over everything unread, one window at a time, writing notes that cite sentence ids. The night runs in the background with the window closed, and can be stopped and resumed.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-                runCard
-                ReaderAskSection(model: model)
-                LensList(model: model)
-            }
-            .padding(24)
-            .frame(maxWidth: 760, alignment: .leading)
+        ReaderPage(title: "Reading", lede: "Whatever you record joins the stream a minute after it settles, and the reader reads it then: a small chunk at a time, through every lens at once (as many in one call as fit), each lens keeping its notebook from chunk to chunk. Then it answers the questions about your goals. It waits while you record or transcribe.") {
+            runCard
+            LensList(model: model)
         }
     }
 
@@ -48,58 +38,53 @@ struct ReaderNightView: View {
                         }
                     }
                     if let outcome = reader.lastOutcome, !reader.running {
-                        Text(outcome).font(.system(size: 12)).foregroundStyle(outcome.hasPrefix("The night is done") ? Color.green : .primary)
+                        Text(outcome).font(.system(size: 12)).foregroundStyle(outcome.hasPrefix("Up to date") ? Color.green : .primary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 6) {
-                    Button(reader.startTitle) { reader.startNight() }
+                    Button(reader.startTitle) { reader.startReading() }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
-                        .disabled(reader.running || reader.blocker != nil)
+                        .disabled(reader.running || reader.blocker != nil || !reader.hasWork)
                     Button(reader.stopping ? "Stopping…" : "Stop after this call") { reader.stopAfterCall() }
                         .disabled(!reader.running || reader.stopping)
-                        .help("Finish the call in progress, save progress, then stop. Resume later from the same place.")
+                        .help("Finish the call in progress, save, then pause. Read now carries on from the same place.")
                     Button("Stop now") { reader.stopNow() }
                         .controlSize(.small)
                         .disabled(!reader.running)
-                        .help("Cut the call in progress short; the window it was reading is read again on resume.")
+                        .help("Cut the call in progress short; the chunk it was reading is read again.")
                 }
             }
-            HStack {
+            HStack(spacing: 14) {
+                Toggle("Read by itself when there's something new", isOn: Binding(get: { reader.config.autoRead }, set: { reader.config.autoRead = $0; if $0 { reader.resumeAuto() } }))
+                    .font(.system(size: 12))
                 Toggle("Keep the Mac awake while reading", isOn: Binding(get: { reader.config.keepAwake }, set: { reader.config.keepAwake = $0 }))
                     .font(.system(size: 12))
                 Spacer()
                 Button("Clear progress") {
-                    confirm("Clear the night's progress?", detail: "progress.json is deleted, so the next run reads the whole stream again from the start. Note files are kept until overwritten.", button: "Clear progress") { reader.clearProgress() }
+                    confirm("Read everything again from the start?", detail: "Every lens forgets how far it has read and its notebook, so the next reading goes through the whole stream again. Note files are kept until they are rewritten.", button: "Clear progress") { reader.clearProgress() }
                 }
                     .controlSize(.small)
                     .disabled(reader.running || reader.folder == nil)
-                    .help("Forget what has been read so the next night starts from the first sentence")
+                    .help("Every lens reads from the first sentence again (after changing a lens's instructions, say)")
             }
+            if reader.config.autoRead, !reader.running, let until = reader.pausedUntil, until > Date() {
+                HStack(spacing: 6) {
+                    Image(systemName: "pause.circle").foregroundStyle(.secondary)
+                    Text(until == .distantFuture ? "Paused: it won't read by itself until you click Read now." : "Paused after a problem until \(until.formatted(date: .omitted, time: .shortened)).")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                    Button("Read by itself again") { reader.resumeAuto() }.buttonStyle(.link).font(.system(size: 12))
+                }
+            }
+            progress
             if !reader.status.isEmpty {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text(reader.status).font(.system(size: 12))
+                    Text(reader.status).font(.system(size: 12)).lineLimit(2)
                 }
             }
             if let live = reader.live { liveView(live) }
-            if !reader.tape.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(reader.tape) { row in
-                        HStack(spacing: 8) {
-                            Text(row.title).font(.system(size: 11)).frame(width: 130, alignment: .leading).lineLimit(1)
-                            HStack(spacing: 1) {
-                                ForEach(Array(row.cells.enumerated()), id: \.offset) { _, c in
-                                    Rectangle().fill(cellColor(c)).frame(height: 8)
-                                }
-                            }
-                            .clipShape(RoundedRectangle(cornerRadius: 2))
-                            Text(row.finished ? "done" : "\(row.percent)%").font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).frame(width: 40, alignment: .trailing)
-                        }
-                    }
-                }
-            }
             DisclosureGroup(isExpanded: $showLog) {
                 ScrollView {
                     Text(reader.logText.isEmpty ? "Nothing yet." : reader.logText)
@@ -120,7 +105,64 @@ struct ReaderNightView: View {
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 10).fill(.quaternary.opacity(0.4)))
-        .onChange(of: reader.running) { _, on in if on { showLog = true } }
+    }
+
+    /// How much of the stream every lens has read, the chunk in hand with a chip per lens, and the questions.
+    @ViewBuilder
+    private var progress: some View {
+        let total = reader.running ? reader.totalCount : reader.stream.count
+        let read = reader.running ? reader.readCount : reader.stream.count - reader.stream.unread
+        if total > 0 {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Read by every lens").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(read.formatted()) of \(total.formatted()) sentences").font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                }
+                ProgressView(value: Double(min(read, total)), total: Double(total)).controlSize(.small)
+                if reader.running, let c = reader.chunk {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Now: \(c.from)–\(c.to)").font(.system(size: 11, weight: .medium))
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 4, alignment: .leading)], alignment: .leading, spacing: 4) {
+                            ForEach(c.readers, id: \.self) { id in
+                                let mark = reader.marks[id] ?? .waiting
+                                HStack(spacing: 4) {
+                                    Image(systemName: symbol(mark)).font(.system(size: 9)).foregroundStyle(color(mark))
+                                    Text(reader.lenses.first { $0.id == id }?.title ?? id).font(.system(size: 11)).lineLimit(1)
+                                }
+                                .padding(.horizontal, 6).padding(.vertical, 3)
+                                .background(RoundedRectangle(cornerRadius: 5).fill(color(mark).opacity(mark == .waiting ? 0.08 : 0.15)))
+                            }
+                        }
+                    }
+                }
+                if let q = reader.questionInfo, q.total > 0 {
+                    HStack {
+                        Text(q.current.isEmpty ? "Questions about your goals" : "Answering: \(q.current)").font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                        Spacer()
+                        Text("\(q.done) of \(q.total) up to date").font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private func symbol(_ m: Reading.Mark) -> String {
+        switch m {
+        case .waiting: "circle"
+        case .now: "circle.dotted"
+        case .done: "checkmark.circle.fill"
+        case .failed: "exclamationmark.circle.fill"
+        }
+    }
+
+    private func color(_ m: Reading.Mark) -> Color {
+        switch m {
+        case .waiting: .secondary
+        case .now: .accentColor
+        case .done: .green
+        case .failed: .orange
+        }
     }
 
     private func liveView(_ live: ReaderController.LiveCall) -> some View {
@@ -160,21 +202,15 @@ struct ReaderNightView: View {
         }
     }
 
-    private func cellColor(_ c: Night.TapeState) -> Color {
-        switch c {
-        case .initial: Color.secondary.opacity(0.2)
-        case .now: Color.accentColor.opacity(0.6)
-        case .done: Color.accentColor
-        case .bad: Color.orange
-        }
-    }
-
     private var headline: String {
-        if reader.running { return "Reading" }
+        if reader.running { return reader.runningAuto ? "Reading what's new" : "Reading" }
         guard reader.folder != nil else { return "Choose a folder to begin" }
         let s = reader.stream
-        if s.count == 0 { return s.rawPresent ? "stream.txt is ready to be numbered and read" : (reader.unfedCount > 0 ? "\(reader.unfedCount) transcripts ready to join the stream" : "Nothing to read yet") }
-        if s.unread == 0 { return "Everything has been read" }
+        if s.count == 0 { return s.rawPresent ? "stream.txt is ready to be numbered and read" : (reader.unfedCount > 0 ? "\(reader.unfedCount) transcript\(reader.unfedCount == 1 ? "" : "s") about to join the stream" : "Nothing to read yet") }
+        if s.unread == 0 {
+            if s.questionsPending > 0 || s.questionsToWrite { return "Read · questions to answer" }
+            return "Up to date"
+        }
         let active = reader.lenses.filter(\.on).count
         return "\(s.unread.formatted()) unread sentence\(s.unread == 1 ? "" : "s") · \(active) lens\(active == 1 ? "" : "es")\(reader.plan.map { " · about \($0.durationText)" } ?? "")"
     }
@@ -182,12 +218,15 @@ struct ReaderNightView: View {
     private var estimate: String {
         if reader.running || reader.folder == nil { return "" }
         let c = reader.config
-        if reader.stream.count == 0 { return reader.unfedCount > 0 ? "They are added when the night starts." : "" }
+        if reader.stream.count == 0 { return reader.unfedCount > 0 ? "They join a minute after they settle, or now with Read now." : "Record something, or paste text on the Stream view." }
         if reader.stream.unread == 0 {
-            return "The next night only runs the question pass\(c.questionCount > 0 ? " (≈ \(c.questionCount) × up to \(c.morningSteps + 1) calls)" : ""). Record or paste more to give it something to read."
+            let p = reader.stream.questionsPending
+            if p > 0 { return "\(p) question\(p == 1 ? "" : "s") about your goals to answer from what was read (up to \(c.askSteps + 1) calls each)." }
+            return reader.stream.questionsToWrite ? "Next it writes \(c.questionCount) questions from your goals and answers them." : "Everything said so far has been read, and every question is answered. Record more, and it reads it."
         }
         guard let p = reader.plan else { return "" }
-        return "≈ \(p.perWindow.formatted()) sentences per window, ≈ \(p.windows.formatted()) windows in all\(p.questionCalls > 0 ? ", plus ≈ \(p.questionCalls.formatted()) calls for the question pass" : ""), at \(c.coolOffSec)s cool-off. A rough plan; the log shows the real pace."
+        let calls = p.callsPerChunk == 1 ? "every lens in one call" : "the lenses in \(p.callsPerChunk) calls"
+        return "≈ \(p.perChunk.formatted()) sentences at a time, \(calls) (with notebooks half full), ≈ \(p.chunks.formatted()) chunk\(p.chunks == 1 ? "" : "s")\(p.questionCalls > 0 ? ", plus ≈ \(p.questionCalls.formatted()) calls for the questions" : ""), \(c.coolOffSec)s between calls. A rough plan; the log shows the real pace."
     }
 
     private func blockerAction(_ step: String) -> String {
@@ -217,7 +256,7 @@ struct LensList: View {
     private var reader: ReaderController { model.reader }
 
     var body: some View {
-        ReaderBlock(title: "Lenses", lede: "Click a lens to edit its instructions; the model sees them verbatim. Lenses run in this order, and a later lens can read the notebook of an earlier one.") {
+        ReaderBlock(title: "Lenses", lede: "Every chunk is read through every lens that is on, in this order; as many share one call as fit. Click a lens to edit its instructions (the model sees them verbatim). A lens can read the notebooks of others.") {
             HStack {
                 Spacer()
                 Button("Add a lens") { let id = reader.addLens(); open.insert(id) }.controlSize(.small)
@@ -257,10 +296,11 @@ struct LensRow: View {
                 Button { setOpen(!isOpen) } label: {
                     HStack(spacing: 8) {
                         Text(lens.title.isEmpty ? "Untitled lens" : lens.title).font(.system(size: 13, weight: .medium)).foregroundStyle(lens.on ? .primary : .secondary)
-                        if lens.carry { badge("notebook", .green) }
-                        if !lens.reads.isEmpty { badge("reads \(lens.reads.count)", .secondary) }
-                        if lens.ignoreGoals { badge("ignores goals", .secondary) }
-                        if !problems.isEmpty { badge("check reads", .orange) }
+                        if lens.carry { Badge("notebook", .green) }
+                        if !lens.reads.isEmpty { Badge("reads \(lens.reads.count)") }
+                        if lens.ignoreGoals { Badge("ignores goals") }
+                        if !problems.isEmpty { Badge("check reads", .orange) }
+                        if let n = reader.entries[lens.id]?.count, n > 0 { Text("\(n.formatted()) entries").font(.system(size: 10)).foregroundStyle(.secondary) }
                         Spacer()
                         Image(systemName: "chevron.down").rotationEffect(.degrees(isOpen ? 0 : -90)).font(.system(size: 10)).foregroundStyle(.secondary)
                     }
@@ -284,7 +324,7 @@ struct LensRow: View {
                         Toggle("carries a notebook", isOn: binding(\.carry)).font(.system(size: 12))
                     }
                     if !problems.isEmpty { Text(problems.joined(separator: "; ") + ". Ids are shown at the bottom of each lens.").font(.system(size: 11)).foregroundStyle(.orange) }
-                    TextField("What this file is for (shown to the morning model)", text: binding(\.purpose))
+                    TextField("What this file is for (shown to the model when it answers questions)", text: binding(\.purpose))
                     Text("Instructions (the model sees these verbatim)").font(.system(size: 11)).foregroundStyle(.secondary)
                     TextEditor(text: binding(\.instructions))
                         .font(.system(size: 12, design: .monospaced))
@@ -301,10 +341,5 @@ struct LensRow: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(lens.on ? 0.4 : 0.2)))
-    }
-
-    private func badge(_ text: String, _ color: Color) -> some View {
-        Text(text).font(.system(size: 10)).padding(.horizontal, 5).padding(.vertical, 1)
-            .background(Capsule().fill(color.opacity(0.15))).foregroundStyle(color == .secondary ? Color.secondary : color)
     }
 }

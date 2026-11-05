@@ -106,32 +106,48 @@ final class ReaderTests: XCTestCase {
         XCTAssertEqual(try ReaderStream.append("New.", to: g).map(\.id), ["s00003"])
     }
 
-    func testNightEndToEndWithAFakeModel() async throws {
+    /// A reply for every lens a call names: its label is "<lens>+<lens>… <first id>".
+    static func sections(_ req: ChatRequest, _ body: (String) -> String) -> String {
+        let ids = req.label.split(separator: " ").first.map { $0.split(separator: "+").map(String.init) } ?? []
+        return ids.map { "=== \($0) ===\n" + body($0) }.joined(separator: "\n")
+    }
+
+    func testReadingEndToEndWithAFakeModel() async throws {
         let f = try temp()
         defer { try? FileManager.default.removeItem(at: f.root) }
         try ReaderStream.append("I want to move to Lisbon. Mara thinks it is a mistake. I feel torn about it.", to: f)
         var cfg = ReaderConfig()
-        cfg.model = "fake"; cfg.coolOffSec = 0; cfg.questionCount = 2; cfg.morningSteps = 2; cfg.windowTokens = 4000
+        cfg.model = "fake"; cfg.coolOffSec = 0; cfg.questionCount = 2; cfg.askSteps = 2; cfg.windowTokens = 8000; cfg.questionRefresh = 2
         let lenses = [Lens.defaults[0], Lens.defaults[1], Lens.defaults[7]]
         let model = FakeModel()
         model.answer = { req in
-            if req.label.hasPrefix("ledger") { return "[s00001] the move; kind: plan\n[s00002] Mara; kind: statement\n[s00003] torn; kind: feeling" }
-            if req.label.hasPrefix("people-and-things") { return "[s00002] Mara — doubts the move\nNOTEBOOK\nMara — person — s00002" }
-            if req.label.hasPrefix("gaps") { return "[s00002] Who is Mara to you?\nNOTEBOOK\nWho is Mara? s00002" }
             if req.label == "qgen" { return "Why do you want to move?\nWhat does Mara think?" }
-            if req.label.hasPrefix("morning s1") { return "OPEN lenses/ledger.md offset 0\nWHY: the index" }
-            if req.label.hasPrefix("morning s2") { return "READ s00001 s00009\nWHY: cite" }
-            return "ANSWER\nYou want to move (s00001).\nEVIDENCE: s00001, s00002"
+            if req.label.hasPrefix("ask s1") { return "OPEN lenses/ledger.md offset 0\nWHY: the index" }
+            if req.label.hasPrefix("ask s2") { return "READ s00001 s00009\nWHY: cite" }
+            if req.label.hasPrefix("ask") { return "ANSWER\nYou want to move (s00001).\nEVIDENCE: s00001, s00002" }
+            return Self.sections(req) { id in
+                switch id {
+                case "ledger": return "[s00001] the move; kind: plan\n[s00002] Mara; kind: statement\n[s00003] torn; kind: feeling\n[s00004] the answer; kind: statement\n[s00005] sister; kind: statement"
+                case "people-and-things": return "[s00002] Mara — doubts the move\nNOTEBOOK\nMara — person — s00002"
+                default: return "[s00002] Who is Mara to you?\nNOTEBOOK\nWho is Mara? s00002"
+                }
+            }
         }
         let tokens = TokenEstimator()
         let logs = Lines()
-        var ctl = Night.Control()
+        let chunks = Lines()
+        var ctl = Reading.Control()
         ctl.log = { m in logs.add(m) }
-        let done = try await Night.run(folder: f, config: cfg, lenses: lenses, goals: "Understand the move.", chat: MeasuredChat(model: model, tokens: tokens), control: ctl)
+        ctl.onChunk = { a, b, n, readers in chunks.add("\(a)-\(b)/\(n) \(readers.joined(separator: ","))") }
+        let done = try await Reading.run(folder: f, config: cfg, lenses: lenses, goals: "Understand the move.", chat: MeasuredChat(model: model, tokens: tokens), control: ctl)
         XCTAssertTrue(done)
+        // Every lens read the chunk in one call.
+        XCTAssertEqual(chunks.all, ["0-3/3 ledger,people-and-things,gaps"])
+        XCTAssertEqual(model.calls.filter { $0.label.contains("+") }.count, 1)
+        XCTAssertTrue(model.calls[0].system.contains("LENS gaps (Questions for you)"))
         let ledger = try XCTUnwrap(f.read("lenses/ledger.md"))
         XCTAssertTrue(ledger.contains("- [s00001] the move; kind: plan"))
-        XCTAssertFalse(ledger.contains("not finished"))
+        XCTAssertFalse(ledger.contains("not read the whole stream"))
         let people = try XCTUnwrap(f.read("lenses/people-and-things.md"))
         XCTAssertTrue(people.contains("## Notebook"))
         XCTAssertTrue(people.contains("Mara — person — s00002"))
@@ -143,8 +159,10 @@ final class ReaderTests: XCTestCase {
         XCTAssertEqual(f.read("goals.md"), "# Goals and intent\n\nUnderstand the move.\n")
         let p = ReaderProgress.load(f)
         XCTAssertEqual(p.lenses["ledger"]?.pos, 3)
-        XCTAssertTrue(p.questionsDone)
+        XCTAssertEqual(p.qa.map(\.asOf), [3, 3])
         XCTAssertTrue(logs.all.contains { $0.contains("cited 1 ids it never read: s00002") })
+        var st = ReaderStream.state(in: f, config: cfg, lenses: lenses, goals: "Understand the move.")
+        XCTAssertFalse(st.hasWork)
         // The gaps lens asked a question; answering it joins the stream.
         let gaps = try XCTUnwrap(ReaderStream.gaps(in: f))
         XCTAssertEqual(gaps.open.map(\.question), ["Who is Mara to you?"])
@@ -152,50 +170,113 @@ final class ReaderTests: XCTestCase {
         XCTAssertEqual(added.map(\.text), ["Q: Who is Mara to you?", "A: My sister."])
         XCTAssertEqual(ReaderStream.gaps(in: f)?.open.count, 0)
         XCTAssertEqual(ReaderStream.gaps(in: f)?.answered, 1)
-        // A second night reads only what is new and regenerates the questions.
-        let st = ReaderStream.state(in: f, config: cfg, lenses: lenses)
-        XCTAssertEqual(st.count, 5); XCTAssertEqual(st.unread, 2); XCTAssertTrue(st.partial)
+        // The next run reads only what is new, then refreshes the answers the growth made stale.
+        st = ReaderStream.state(in: f, config: cfg, lenses: lenses, goals: "Understand the move.")
+        XCTAssertEqual(st.count, 5); XCTAssertEqual(st.unread, 2); XCTAssertTrue(st.partial); XCTAssertEqual(st.questionsPending, 2)
         let calls = model.calls.count
-        let again = try await Night.run(folder: f, config: cfg, lenses: lenses, goals: "Understand the move.", chat: MeasuredChat(model: model, tokens: tokens), control: ctl)
+        let again = try await Reading.run(folder: f, config: cfg, lenses: lenses, goals: "Understand the move.", chat: MeasuredChat(model: model, tokens: tokens), control: ctl)
         XCTAssertTrue(again)
-        XCTAssertTrue(model.calls[calls...].contains { $0.user.contains("## Window 1 of 1 (sentences s00004–s00005)") })
-        XCTAssertTrue(logs.all.contains { $0.contains("questions will be regenerated") })
+        XCTAssertTrue(model.calls[calls...].contains { $0.user.contains("## The chunk: sentences s00004–s00005") })
+        XCTAssertFalse(model.calls[calls...].contains { $0.label == "qgen" })
+        XCTAssertEqual(ReaderProgress.load(f).qa.map(\.asOf), [5, 5])
+        // A pinned question is answered too; changed goals write new questions.
+        try ReaderStream.pin("Who is Mara?", in: f)
+        XCTAssertEqual(ReaderStream.state(in: f, config: cfg, lenses: lenses, goals: "Understand the move.").questionsPending, 1)
+        XCTAssertTrue(ReaderStream.state(in: f, config: cfg, lenses: lenses, goals: "Something else.").questionsToWrite)
+        _ = try await Reading.run(folder: f, config: cfg, lenses: lenses, goals: "Understand the move.", chat: MeasuredChat(model: model, tokens: tokens), control: ctl)
+        XCTAssertEqual(ReaderProgress.load(f).qa.count, 3)
+        XCTAssertTrue(try XCTUnwrap(f.read("questions.md")).contains("## Who is Mara?"))
         // Flags go to corrections.md; the chat survives a reload.
         try ReaderStream.flag(question: "q", answer: "a", note: "wrong", in: f)
         XCTAssertTrue(try XCTUnwrap(f.read("corrections.md")).contains("Correction: wrong"))
-        var turn = ReaderStream.Turn(q: "What?"); turn.answer = "This."
+        var turn = ReaderStream.Turn(q: "What?", about: "x", aboutLabel: "y"); turn.answer = "This."
         try ReaderStream.saveChat([turn], in: f)
         XCTAssertEqual(ReaderStream.loadChat(in: f).map(\.answer), ["This."])
+        XCTAssertEqual(ReaderStream.loadChat(in: f).map(\.about), ["x"])
     }
 
-    func testNightStopsAndResumes() async throws {
+    func testLensesSplitIntoCallsAndMissingSectionsReadAlone() async throws {
+        let f = try temp()
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        try ReaderStream.append("One thing. Two things. Three things.", to: f)
+        var cfg = ReaderConfig()
+        cfg.model = "fake"; cfg.coolOffSec = 0; cfg.questionCount = 0; cfg.windowTokens = 8000
+        let lenses = [Lens.defaults[0], Lens.defaults[1], Lens.defaults[3]]
+        // One per call when asked.
+        cfg.lensesPerCall = 1
+        let one = FakeModel()
+        one.answer = { req in Self.sections(req) { _ in "[s00001] x" } }
+        _ = try await Reading.run(folder: f, config: cfg, lenses: lenses, goals: "", chat: MeasuredChat(model: one, tokens: TokenEstimator()), control: Reading.Control())
+        XCTAssertEqual(one.calls.map { String($0.label.split(separator: " ")[0]) }, ["ledger", "people-and-things", "feelings"])
+        // All at once, but the reply leaves one lens out: that one reads again on its own.
+        let g = try temp()
+        defer { try? FileManager.default.removeItem(at: g.root) }
+        try ReaderStream.append("One thing. Two things. Three things.", to: g)
+        cfg.lensesPerCall = 0
+        let some = FakeModel()
+        some.answer = { req in
+            if req.label.hasPrefix("ledger+") { return "=== ledger ===\n[s00001] a\n**Feelings**\n[s00002] glad" }
+            return "[s00003] alone"
+        }
+        let logs = Lines()
+        var ctl = Reading.Control()
+        ctl.log = { logs.add($0) }
+        _ = try await Reading.run(folder: g, config: cfg, lenses: lenses, goals: "", chat: MeasuredChat(model: some, tokens: TokenEstimator()), control: ctl)
+        XCTAssertEqual(some.calls.map { String($0.label.split(separator: " ")[0]) }, ["ledger+people-and-things+feelings", "people-and-things"])
+        XCTAssertTrue(try XCTUnwrap(g.read("lenses/feelings.md")).contains("- [s00002] glad"))
+        XCTAssertTrue(try XCTUnwrap(g.read("lenses/people-and-things.md")).contains("- [s00003] alone"))
+        XCTAssertTrue(logs.all.contains { $0.contains("People and things was missing from the reply") })
+        // The output cap splits the lenses too.
+        var small = cfg; small.outputTokens = 400
+        let sample = (1...16).map { Sentence(id: Sentences.makeId($0), text: "A sentence of an ordinary length for the stream.") }
+        let groups = Reading.groups(lenses, all: lenses, chunk: sample, notebooks: [:], goals: "", config: small, tokens: TokenEstimator())
+        XCTAssertGreaterThan(groups.count, 1)
+        XCTAssertEqual(groups.flatMap { $0.map(\.id) }, lenses.map(\.id))
+    }
+
+    func testReadingStopsResumesAndCatchesUpANewLens() async throws {
         let f = try temp()
         defer { try? FileManager.default.removeItem(at: f.root) }
         try ReaderStream.append((1...40).map { "Sentence number \($0) is here." }.joined(separator: " "), to: f)
         var cfg = ReaderConfig()
-        cfg.model = "fake"; cfg.coolOffSec = 0; cfg.questionCount = 0; cfg.maxSentences = 10; cfg.windowTokens = 4000
+        cfg.model = "fake"; cfg.coolOffSec = 0; cfg.questionCount = 0; cfg.chunkSentences = 10; cfg.windowTokens = 4000
         let model = FakeModel()
-        model.answer = { _ in "[s00001] x" }
+        model.answer = { req in Self.sections(req) { _ in "[s00001] x" } }
         let tokens = TokenEstimator()
         let counter = Counter()
-        var ctl = Night.Control()
+        var ctl = Reading.Control()
         ctl.stopped = { counter.value >= 2 }
-        ctl.onTape = { _, _, _, state in if state == .done { counter.bump() } }
+        ctl.onRead = { _, _ in counter.bump() }
         let chat = MeasuredChat(model: model, tokens: tokens)
-        let done = try await Night.run(folder: f, config: cfg, lenses: [Lens.defaults[0]], goals: "", chat: chat, control: ctl)
+        let ledger = [Lens.defaults[0]]
+        let done = try await Reading.run(folder: f, config: cfg, lenses: ledger, goals: "", chat: chat, control: ctl)
         XCTAssertFalse(done)
         XCTAssertEqual(ReaderProgress.load(f).lenses["ledger"]?.pos, 20)
-        XCTAssertTrue(try XCTUnwrap(f.read("lenses/ledger.md")).contains("not finished"))
-        XCTAssertTrue(ReaderStream.state(in: f, config: cfg, lenses: [Lens.defaults[0]]).partial)
-        let plan = ReaderStream.plan(config: cfg, lenses: [Lens.defaults[0]], goals: "", unread: 20, averageChars: 28, tokens: tokens)
-        XCTAssertEqual(plan.windows, 2)
+        XCTAssertTrue(try XCTUnwrap(f.read("lenses/ledger.md")).contains("not read the whole stream"))
+        XCTAssertTrue(ReaderStream.state(in: f, config: cfg, lenses: ledger).partial)
+        let plan = ReaderStream.plan(config: cfg, lenses: ledger, goals: "", unread: 20, averageChars: 28, tokens: tokens)
+        XCTAssertEqual(plan.chunks, 2); XCTAssertEqual(plan.callsPerChunk, 1)
         ctl.stopped = { false }
-        let resumed = try await Night.run(folder: f, config: cfg, lenses: [Lens.defaults[0]], goals: "", chat: chat, control: ctl)
+        // A lens switched on now reads alone until it reaches the ledger, then they read together.
+        let both = [Lens.defaults[0], Lens.defaults[3]]
+        let chunks = Lines()
+        ctl.onChunk = { a, b, _, readers in chunks.add("\(a)-\(b) \(readers.joined(separator: ","))") }
+        let resumed = try await Reading.run(folder: f, config: cfg, lenses: both, goals: "", chat: chat, control: ctl)
         XCTAssertTrue(resumed)
+        XCTAssertEqual(chunks.all, ["0-10 feelings", "10-20 feelings", "20-30 ledger,feelings", "30-40 ledger,feelings"])
         XCTAssertEqual(ReaderProgress.load(f).lenses["ledger"]?.pos, 40)
-        // A changed window size starts over.
-        cfg.windowTokens = 5000
-        XCTAssertEqual(ReaderStream.state(in: f, config: cfg, lenses: [Lens.defaults[0]]).unread, 40)
+        // Text added while reading is read in the same run.
+        try ReaderStream.append("A first late one.", to: f)
+        let once = Counter()
+        let late = FakeModel()
+        late.answer = { req in
+            if once.value == 0 { once.bump(); _ = try? ReaderStream.append("A second late one.", to: f) }
+            return Self.sections(req) { _ in "[s00041] late" }
+        }
+        let caught = try await Reading.run(folder: f, config: cfg, lenses: both, goals: "", chat: MeasuredChat(model: late, tokens: tokens), control: ctl)
+        XCTAssertTrue(caught)
+        XCTAssertEqual(ReaderProgress.load(f).lenses["feelings"]?.pos, 42)
+        XCTAssertEqual(late.calls.count, 2)
     }
 
     func testPromptIsRefusedOverBudget() async throws {
@@ -209,6 +290,65 @@ final class ReaderTests: XCTestCase {
         XCTAssertEqual(MeasuredChat.stripThinking("leak</think>answer"), "answer")
     }
 
+    func testSectionsGapsAndWhereSentencesCameFrom() throws {
+        let lenses = [(id: "ledger", title: "Ledger"), (id: "people-and-things", title: "People and things"), (id: "threads", title: "Threads and decisions")]
+        let reply = """
+        Sure, here you go.
+        === ledger === Ledger
+        [s00001] a
+        ## People and things
+        [s00002] b
+        NOTEBOOK
+        Threads: not a header
+        **threads (keeps a notebook)**
+        [none]
+        """
+        let sec = LensParse.sections(reply, lenses: lenses)
+        XCTAssertEqual(sec["ledger"], "[s00001] a")
+        XCTAssertEqual(LensParse.lens(sec["people-and-things"] ?? "").notebook, "Threads: not a header")
+        XCTAssertEqual(sec["threads"], "[none]")
+        XCTAssertEqual(LensParse.sections("[s00001] only", lenses: [lenses[0]])["ledger"], "[s00001] only")
+        XCTAssertTrue(LensParse.sections("[s00001] only", lenses: lenses).isEmpty)
+
+        // Gaps: settled ones and the notebook are not open questions.
+        let f = try temp()
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        try f.write("lenses/gaps.md", "# Q\n\n- [s00001] Who is Mara?\n- [s00002] What is Kethra?\n- [s00005] settled: who is Mara\n\n## Notebook\n\n- [s00009] Where is the flat?\n")
+        XCTAssertEqual(ReaderStream.gaps(in: f)?.open.map(\.question), ["What is Kethra?"])
+
+        // Transcripts: where they are in the stream, edits noticed, a revision joins again.
+        let r = Recording(createdAt: Date(timeIntervalSince1970: 0), text: "Said this. And that.", status: .final)
+        XCTAssertEqual(ReaderStream.standing(of: r, in: f), .waiting)
+        try ReaderStream.append("Before.", to: f)
+        try ReaderStream.feed([r], into: f, timeZone: TimeZone(identifier: "UTC")!)
+        XCTAssertEqual(ReaderStream.standing(of: r, in: f), .inStream(ids: [2, 3, 4], edited: false))
+        var edited = r; edited.text = "Said this. And the other."
+        XCTAssertEqual(ReaderStream.standing(of: edited, in: f), .inStream(ids: [2, 3, 4], edited: true))
+        let rev = try ReaderStream.revise(edited, in: f, timeZone: TimeZone(identifier: "UTC")!)
+        XCTAssertTrue(rev[0].text.contains("replaces s00002–s00004"))
+        XCTAssertEqual(ReaderStream.standing(of: edited, in: f), .inStream(ids: [2, 3, 4] + Array(5...(4 + rev.count)), edited: false))
+        let spans = ReaderStream.spans(in: f)
+        XCTAssertEqual(ReaderStream.span(of: 3, in: spans)?.source, r.id.uuidString)
+        XCTAssertNil(ReaderStream.span(of: 1, in: spans)?.source)
+        XCTAssertNil(ReaderStream.span(of: 99, in: spans))
+        // An answer spoken in a recording keeps that recording from joining again.
+        let spoken = Recording(text: "My sister.", status: .final)
+        try ReaderStream.answer(ReaderStream.Gap(question: "Who?", ids: []), with: spoken.text, in: f, source: spoken.id.uuidString)
+        XCTAssertEqual(ReaderStream.unfed([spoken], in: f), [])
+
+        // Settling: a new transcript waits until it has been unchanged for a while; an old one is ready.
+        var settle = ReaderStream.Settle()
+        let now = Date(timeIntervalSince1970: 10_000)
+        let fresh = Recording(createdAt: now, text: "New.", status: .final)
+        let old = Recording(createdAt: Date(timeIntervalSince1970: 0), text: "Old.", status: .final)
+        XCTAssertEqual(settle.ready([fresh, old], fed: [], now: now, seconds: 60).map(\.text), ["Old."])
+        var changed = fresh; changed.text = "New, corrected."
+        XCTAssertEqual(settle.ready([changed], fed: [], now: now.addingTimeInterval(50), seconds: 60), [])
+        XCTAssertEqual(settle.ready([changed], fed: [], now: now.addingTimeInterval(100), seconds: 60), [])
+        XCTAssertEqual(settle.ready([changed], fed: [], now: now.addingTimeInterval(111), seconds: 60).map(\.text), ["New, corrected."])
+        XCTAssertEqual(settle.ready([changed], fed: [changed.id.uuidString], now: now.addingTimeInterval(200), seconds: 60), [])
+    }
+
     func testConfigAndNotesFolder() throws {
         XCTAssertEqual(ReaderConfig.normalizeBase(" localhost:11434/api/ "), "http://localhost:11434")
         XCTAssertEqual(ReaderConfig.normalizeBase(""), "http://localhost:11434")
@@ -216,6 +356,7 @@ final class ReaderTests: XCTestCase {
         XCTAssertEqual(c.clamped().windowTokens, 1000); XCTAssertEqual(c.clamped().charsPerToken, 5)
         let decoded = try JSONDecoder().decode(ReaderConfig.self, from: Data("{\"model\":\"m\"}".utf8))
         XCTAssertEqual(decoded.model, "m"); XCTAssertEqual(decoded.windowTokens, 6000)
+        XCTAssertEqual(try JSONDecoder().decode(ReaderConfig.self, from: Data("{\"morningSteps\":3}".utf8)).askSteps, 3)
         XCTAssertEqual(try JSONDecoder().decode(Lens.self, from: Data("{\"id\":\"x\"}".utf8)).title, "x")
         XCTAssertEqual(Lens.slug("  New Lens!! 2 "), "new-lens-2")
         let f = try temp()
@@ -229,7 +370,7 @@ final class ReaderTests: XCTestCase {
         XCTAssertEqual(t.clip("abcdefghij", 1).text, "abc")
         t.calibrate(chars: 1000, actualTokens: 500, estimatedTokens: 280)
         XCTAssertLessThan(t.charsPerToken, 3.6)
-        XCTAssertEqual(Morning.page(of: "a\nb\nc", offset: 1, budget: 1, tokens: t), "b\n[lines 1–1 of 3; to continue, OPEN the same file with offset 2]")
+        XCTAssertEqual(Asking.page(of: "a\nb\nc", offset: 1, budget: 1, tokens: t), "b\n[lines 1–1 of 3; to continue, OPEN the same file with offset 2]")
     }
 }
 

@@ -18,6 +18,12 @@ public enum Sentences {
         return "s" + String(repeating: "0", count: max(0, idWidth - digits.count)) + digits
     }
 
+    /// The number in an id ("s00042" → 42).
+    public static func number(_ id: String) -> Int? {
+        guard isId(id) else { return nil }
+        return Int(id.dropFirst())
+    }
+
     /// Normalises an id a model wrote ("s42", "S0042", " s00042 ") to the canonical width; nil if it is not an id.
     public static func normId(_ raw: String) -> String? {
         var s = Substring(raw.trimmingCharacters(in: .whitespacesAndNewlines))
