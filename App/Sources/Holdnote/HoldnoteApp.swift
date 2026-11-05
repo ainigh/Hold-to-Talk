@@ -70,9 +70,11 @@ struct HoldnoteApp: App {
                 Divider()
                 Button("Reading") { model.showReader(.reading) }.keyboardShortcut("4", modifiers: .command)
                 Button("Notes") { model.showReader(.notes) }.keyboardShortcut("5", modifiers: .command)
+                Button("Lenses") { model.show(.lenses) }.keyboardShortcut("6", modifiers: .command)
                 Button("Guide") { model.showReaderAbout() }
                 Divider()
                 Button("Setup") { model.showSetup() }
+                Button("Goals") { model.showGoals() }
             }
         }
     }
@@ -121,17 +123,43 @@ final class AppModel {
     let monitor = SystemMonitor()
     /// The reader: the stream, reading it, asking about it, its questions for you, the notes.
     let reader = ReaderController()
+    /// The words that carry each item's meaning, counted.
+    let words = WordsController()
     /// What the window shows: the first column lists these; choosing one opens the columns it
     /// needs (the recordings list, the note files, the settings pages) and its page on the right.
     enum Section: Hashable {
         case recordings
         case reader(ReaderView)
+        case lenses
         case readerGuide
         case settings(SettingsTab)
         case setup
     }
+    /// Status's pages, in its second column: what is running now, the reading, setup.
+    enum StatusTab: String, CaseIterable, Identifiable {
+        case now, reading, setup
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .now: "Now"
+            case .reading: "Reading"
+            case .setup: "Setup"
+            }
+        }
+        var symbol: String {
+            switch self {
+            case .now: "gauge.with.needle"
+            case .reading: "eyeglasses"
+            case .setup: "checklist"
+            }
+        }
+    }
+    var statusTab: StatusTab = .now
     var section: Section = .recordings {
         didSet {
+            // Reading and Setup are pages of Status now; the old sections route there.
+            if section == .reader(.reading) { statusTab = .reading; section = .reader(.status); readerView = .status; return }
+            if section == .setup { statusTab = .setup; section = .reader(.status); readerView = .status; return }
             if case let .reader(v) = section { readerView = v }
             if case let .settings(t) = section { settingsTab = t }
         }
@@ -149,8 +177,11 @@ final class AppModel {
     var showingAll = false {
         didSet { if showingAll { section = .recordings } }
     }
-    /// The row at the top of the stream's list that stands for all of it.
+    /// The row at the top of the stream's list that stands for all of it, and the one above it
+    /// for your goals. Neither is an item; neither mixes with items in the selection.
     static let allID = UUID(uuidString: "00000000-0000-0000-0000-00000000A11A")!
+    static let goalsID = UUID(uuidString: "00000000-0000-0000-0000-00000060A150")!
+    static let specialIDs: Set<UUID> = [allID, goalsID]
     /// A passage picked in the stream to ask about: the ask field beside the stream (target
     /// nil) or beside the item (its id) takes it.
     var askDraft = ""
@@ -403,9 +434,17 @@ final class AppModel {
         show(.setup)
     }
 
-    /// Setup is done (or put off): back to the recordings.
+    /// Setup is done (or put off): back to the stream; Status opens on Now next time.
     func closeSetup() {
+        statusTab = .now
         section = .recordings
+    }
+
+    /// Your goals, in the stream's list above ALL.
+    func showGoals() {
+        selection = [Self.goalsID]
+        showingAll = false
+        show(.recordings)
     }
 
     // MARK: - Actions from the menus
@@ -432,6 +471,7 @@ final class AppModel {
     func deleteSelected() {
         guard !selection.isEmpty else { return }
         if let playing = player.playing, selection.contains(playing) { player.stop() }
+        for id in selection { words.forget(id) }
         library.delete(selection)
         selection = []
     }

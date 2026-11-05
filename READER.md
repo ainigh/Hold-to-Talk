@@ -24,9 +24,11 @@ The expensive reading is done in small pieces as you talk, in the background, in
 The window has three things you use, named in its first column, and the rest under the hood.
 
 - **Stream**: everything you add (recordings, dropped or imported audio, pasted or dropped text), each item text, under an **ALL** row. Choose ALL for the whole stream as one text, which is exactly what the reader reads, with the conversation about all of it beside it; select a passage and right-click to ask about it. Choose an item for its own text, with the Reader panel beside it: whether it is in the stream yet and read, the questions it raised for you, what each lens noticed in it, and a conversation about that item alone (its sentences are read first). An item edited after it joined can join again as a correction.
-- **Status**: what the reader is doing, what the transcriber is at, your goals, and the questions kept answered about them.
+- **Goals**, a row above ALL in the stream: what you are trying to find out, and the questions kept answered about it.
+- **Status**: Now (what is running: a recording, the transcriber, the reader, each with its stop), Reading (what the reader is doing now: the chunk in hand and which lenses have read it, what the model is writing as it writes it, the log, how far it has come) and Setup.
 - **For you**: the reader's questions, under the item each came from.
-- **Under the hood. Reading**: what it is doing now (the chunk in hand and which lenses have read it, what the model is writing as it writes it, the log), how far it has come, and the lenses. **Notes**: the files it writes, rendered. **Guide**: this document.
+- **Under the hood. Lenses**: the angles, editable. **Notes**: the files it writes, rendered. The **Guide** (this document) is at the bottom of the first column.
+- **Words**, beside ALL and in each item's panel: the open-class words (nouns, verbs, adjectives, adverbs) counted by lemma, the closed classes left out. Not the reader's work: a plain pass with Apple's language tagger, there before any lens has read.
 
 ## The lenses
 
@@ -41,7 +43,7 @@ The window has three things you use, named in its first column, and the rest und
 | Against the goals | yes | Evidence that your stated goals or assumptions are wrong or already argued against by you. A counterweight to finding what you expect to find. |
 | Questions for you | yes | What the reader needed to know and the text did not say. Answered by voice or typing; answers join the stream. |
 
-All lens instructions are editable (Reading view) and the model sees them verbatim. Add lenses for whatever angle you want.
+All lens instructions are editable (Lenses, in the first column) and the model sees them verbatim. Add lenses for whatever angle you want.
 
 ## Files written
 
@@ -92,8 +94,8 @@ A rest (default 20 seconds) is taken after every call while reading, so a larger
 ## Setup
 
 1. Install Ollama and pull a model, e.g. `ollama pull llama3.1:8b`. Start it (the menu bar app, or `ollama serve`). A native app needs no `OLLAMA_ORIGINS`.
-2. Open Status (⌘2). Getting started at the top says what is still missing.
-3. Add something to the stream: hold the hotkey and talk, drop an audio or text file on the window, or paste text. Write your goals there if you have some. Pick the model in Settings → Reader.
+2. Open Status (⌘2). Getting started at the top of Now says what is still missing.
+3. Add something to the stream: hold the hotkey and talk, drop an audio or text file on the window, or paste text. Write your goals (the Goals row above ALL) if you have some. Pick the model in Settings → Reader.
 4. That's all: it reads by itself. Ask beside ALL or beside an item, answer its questions under For you or beside the item, click any sentence id to see your words and open the recording. Flag what is wrong.
 
 ## Known limits

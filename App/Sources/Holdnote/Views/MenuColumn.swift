@@ -4,8 +4,8 @@ import SwiftUI
 
 /// The window's first column. Three things you use: the Stream (everything you add, each item
 /// text), Ask (a conversation about it) and For you (what the reader needs you to tell it).
-/// Under the hood, how the reading works: Reading, Notes, the Guide. Then Settings and Setup.
-/// At the bottom, the recording switches and updates; what is running shows at the top right.
+/// Under the hood, how the reading works: Lenses and Notes. Then Settings. At the bottom, the
+/// Guide and updates; what is running, and the recording switches, are at the top of the window.
 struct MenuColumn: View {
     @Bindable var model: AppModel
 
@@ -35,15 +35,13 @@ struct MenuColumn: View {
                     }
                 }
                 Section("Under the hood") {
-                    ForEach(ReaderView.allCases.filter { !$0.isMain }) { v in
+                    row("Lenses", symbol: "camera.aperture", meta: model.reader.lenses.filter(\.on).count.formatted()).tag(Item.lenses)
+                    ForEach(ReaderView.allCases.filter { !$0.isMain && $0 != .reading }) { v in
                         row(v.title, symbol: v.symbol, meta: meta(v), attention: attention(v)).tag(Item.reader(v))
                     }
-                    row("Guide", symbol: "book", meta: "").tag(Item.readerGuide)
                 }
                 Section {
                     row("Settings", symbol: "gearshape", meta: "").tag(Item.settings)
-                    row("Setup", symbol: model.capture.hotkeyRunning ? "checklist" : "exclamationmark.triangle",
-                        meta: model.capture.hotkeyRunning ? "" : "hotkey off", attention: !model.capture.hotkeyRunning).tag(Item.setup)
                 }
             }
             .listStyle(.sidebar)
@@ -53,7 +51,7 @@ struct MenuColumn: View {
     }
 
     /// The rows stand for sections; settings is one row whatever page it is on.
-    enum Item: Hashable { case recordings, reader(ReaderView), readerGuide, settings, setup }
+    enum Item: Hashable { case recordings, reader(ReaderView), lenses, readerGuide, settings, setup }
 
     private var selection: Binding<Item?> {
         Binding(
@@ -61,6 +59,7 @@ struct MenuColumn: View {
                 switch model.section {
                 case .recordings: .recordings
                 case let .reader(v): .reader(v)
+                case .lenses: .lenses
                 case .readerGuide: .readerGuide
                 case .settings: .settings
                 case .setup: .setup
@@ -70,6 +69,7 @@ struct MenuColumn: View {
                 switch item {
                 case .recordings: model.section = .recordings
                 case let .reader(v): model.section = .reader(v)
+                case .lenses: model.section = .lenses
                 case .readerGuide: model.section = .readerGuide
                 case .settings: model.section = .settings(model.settingsTab)
                 case .setup: model.section = .setup
@@ -90,32 +90,18 @@ struct MenuColumn: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 9) {
-            if model.capture.isRecording {
-                Button { model.capture.stopFromMenu() } label: {
-                    Label("Recording · Stop", systemImage: "stop.circle.fill").foregroundStyle(.red)
+            if !model.capture.hotkeyRunning {
+                Button { model.showSetup() } label: {
+                    Label("The hotkey can't be seen · Setup", systemImage: "exclamationmark.triangle").foregroundStyle(Color.accentColor)
                 }
                 .buttonStyle(.plain)
-                .help("Stop the recording in progress (⌘.)")
+                .help("Something the hotkey needs is missing; Setup says what")
             }
-            Toggle(isOn: Binding(get: { !model.capture.paused }, set: { model.capture.paused = !$0 })) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Hold \(model.settings.settings.hotkey.glyph) to talk").font(.system(size: 12))
-                    if model.capture.paused { Text("Paused").font(.system(size: 10)).foregroundStyle(.secondary) }
-                }
+            Button { model.showReaderAbout() } label: {
+                Label("Guide", systemImage: "book").font(.system(size: 12)).foregroundStyle(model.section == .readerGuide ? Color.accentColor : .primary)
             }
-            .toggleStyle(.switch).controlSize(.mini)
-            .help(model.capture.paused ? "The hotkey is paused; turn on to record with it again" : "Hold the key anywhere to record; turn off to pause it")
-            Toggle(isOn: $model.listening) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Voice detection").font(.system(size: 12))
-                    if model.capture.isListening {
-                        Text(model.capture.isSpeaking ? "Hearing speech…" : "Recording starts when you speak")
-                            .font(.system(size: 10)).foregroundStyle(model.capture.isSpeaking ? Color.red : .secondary)
-                    }
-                }
-            }
-            .toggleStyle(.switch).controlSize(.mini)
-            .help("Record by itself whenever you speak (⌘⇧L)")
+            .buttonStyle(.plain)
+            .help("What the reader does and why")
             Divider()
             HStack(spacing: 6) {
                 UpdateStatus(updater: model.updater).buttonStyle(.borderless).controlSize(.small).labelStyle(.iconOnly)

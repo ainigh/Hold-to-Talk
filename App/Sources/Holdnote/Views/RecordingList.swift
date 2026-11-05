@@ -53,8 +53,17 @@ struct RecordingList: View {
             .background(RoundedRectangle(cornerRadius: 7).fill(.quaternary.opacity(0.6)))
             .padding(.horizontal, 10).padding(.vertical, 8)
             List(selection: $model.selection) {
-                // ALL: the whole stream as one text, with the conversation about all of it.
+                // Goals and ALL: not items, but what the reader reads with every item, and all of it.
                 Section {
+                    HStack(spacing: 8) {
+                        Image(systemName: "target").foregroundStyle(Color.accentColor)
+                        Text("Goals").font(.system(size: 13, weight: .semibold))
+                        Spacer()
+                        Text(goalsMeta).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    .padding(.vertical, 4)
+                    .tag(AppModel.goalsID)
+                    .help("What you are trying to find out: every lens reads it, and the reader keeps questions about it answered")
                     HStack(spacing: 8) {
                         Image(systemName: "text.alignleft").foregroundStyle(Color.accentColor)
                         Text("ALL").font(.system(size: 13, weight: .semibold))
@@ -93,11 +102,13 @@ struct RecordingList: View {
                 model.togglePlayback()
                 return .handled
             }
-            // ALL, or nothing chosen, shows the whole stream; an item chosen shows its own text.
-            // ALL and items don't mix: whichever was added last wins.
+            // ALL, or nothing chosen, shows the whole stream; Goals shows your goals; an item chosen
+            // shows its own text. Goals, ALL and items don't mix: whichever was added last wins.
             .onChange(of: model.selection) { old, new in
-                if new.contains(AppModel.allID), new.count > 1 {
-                    model.selection = old.contains(AppModel.allID) ? new.subtracting([AppModel.allID]) : [AppModel.allID]
+                let special = new.intersection(AppModel.specialIDs)
+                if !special.isEmpty, new.count > 1 {
+                    let added = new.subtracting(old)
+                    model.selection = Set([added.first ?? special.first!])
                 } else if new == [AppModel.allID] {
                     model.showingAll = true
                 } else if !new.isEmpty {
@@ -112,6 +123,13 @@ struct RecordingList: View {
             }
         }
         .onChange(of: model.searchRequests) { _, _ in searching = true }
+    }
+
+    private var goalsMeta: String {
+        let r = model.reader
+        if r.goals.trimmingCharacters(in: .whitespaces).isEmpty { return "none yet" }
+        let n = r.questions.count
+        return n == 0 ? "" : "\(r.questions.filter { r.answers[$0] != nil }.count)/\(n)"
     }
 
     private var order: Binding<Settings.ListOrder> {

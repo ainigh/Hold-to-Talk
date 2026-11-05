@@ -1,20 +1,116 @@
 import Harness
 import SwiftUI
 
-/// Status: where things stand. What is in the way of the reader's first answers, what it is
-/// doing now, what the transcriber is at, your goals, and the questions the reader keeps
-/// answered about them. Asking happens beside the stream (ALL) and beside each item.
-struct ReaderStatusView: View {
-    let model: AppModel
-    let go: (ReaderView) -> Void
-
-    private var reader: ReaderController { model.reader }
+/// Status's pages, in the window's second column: Now (what is running, with its stop), Reading
+/// (what the reader is doing in detail), Setup (what the hotkey needs).
+struct StatusList: View {
+    @Bindable var model: AppModel
 
     var body: some View {
-        ReaderPage(title: "Status", lede: "What the reader is doing and what it keeps answered. It reads everything in the stream a chunk at a time, through every lens at once, and keeps the answers below up to date as you add more.") {
-            GettingStarted(model: model, go: go)
-            ReaderStatusStrip(model: model, go: go)
-            TranscriberStatus(model: model)
+        VStack(spacing: 0) {
+            ColumnHeader(title: "Status") { EmptyView() }
+            List(selection: Binding(get: { model.statusTab }, set: { if let t = $0 { model.statusTab = t } })) {
+                ForEach(AppModel.StatusTab.allCases) { t in
+                    HStack {
+                        Label(t.title, systemImage: t == .setup && !model.capture.hotkeyRunning ? "exclamationmark.triangle" : t.symbol)
+                        Spacer()
+                        Text(meta(t)).font(.system(size: 11)).foregroundStyle(attention(t) ? Color.accentColor : .secondary)
+                    }
+                    .tag(t)
+                }
+            }
+            .listStyle(.sidebar)
+        }
+    }
+
+    private func meta(_ t: AppModel.StatusTab) -> String {
+        switch t {
+        case .now:
+            if model.capture.isRecording { return "recording" }
+            if model.library.transcribing != nil { return "transcribing" }
+            if model.reader.running { return "\(model.reader.percent)%" }
+            return ""
+        case .reading:
+            if model.reader.running { return "\(model.reader.percent)%" }
+            return model.reader.stream.unread > 0 ? "\(model.reader.stream.unread.formatted()) unread" : ""
+        case .setup: return model.capture.hotkeyRunning ? "" : "hotkey off"
+        }
+    }
+
+    private func attention(_ t: AppModel.StatusTab) -> Bool {
+        switch t {
+        case .now: model.capture.isRecording || model.library.transcribing != nil
+        case .reading: !model.reader.running && model.reader.stream.unread > 0 && model.reader.ollamaOK && !model.reader.config.autoRead
+        case .setup: !model.capture.hotkeyRunning
+        }
+    }
+}
+
+/// Now: everything that is running, each with the way to stop it, and what stands in the way
+/// of the reader's first answers.
+struct StatusNowView: View {
+    let model: AppModel
+
+    private var reader: ReaderController { model.reader }
+    private var library: Library { model.library }
+
+    var body: some View {
+        ReaderPage(title: "Now", lede: "What Holdnote is doing, and how to stop it. The same line sits at the top of the window.") {
+            GettingStarted(model: model, go: { model.showReader($0) })
+            Card {
+                HStack {
+                    Label(model.capture.isRecording ? "Recording" : (model.capture.isListening ? (model.capture.isSpeaking ? "Listening · hearing you" : "Listening for speech") : "Not recording"),
+                          systemImage: model.capture.isRecording ? "record.circle.fill" : "mic")
+                        .foregroundStyle(model.capture.isRecording ? Color.red : .primary)
+                    Spacer()
+                    if model.capture.isRecording {
+                        Button("Stop recording") { model.capture.stopFromMenu() }.controlSize(.small)
+                    } else if model.capture.isListening {
+                        Button("Stop listening") { model.listening = false }.controlSize(.small)
+                    }
+                }
+                Text(model.capture.paused ? "The hotkey is paused (the switch at the top of the window)." : "Hold \(model.settings.settings.hotkey.glyph) anywhere to record; tap it twice to record hands-free.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            Card {
+                HStack {
+                    Label("Transcriber", systemImage: "waveform").foregroundStyle(library.transcribing != nil ? Color.accentColor : .primary)
+                    Spacer()
+                    if library.transcribing != nil {
+                        Button(library.transcribingStopping ? "Stopping…" : "Stop transcribing") { library.cancelTranscription() }
+                            .controlSize(.small).disabled(library.transcribingStopping)
+                    }
+                }
+                TranscriberStatus(model: model)
+            }
+            Card {
+                HStack {
+                    Label("Reader", systemImage: "eyeglasses").foregroundStyle(reader.running ? Color.accentColor : .primary)
+                    Spacer()
+                    if reader.running {
+                        Button(reader.stopping ? "Stopping…" : "Pause after this call") { reader.stopAfterCall() }.controlSize(.small).disabled(reader.stopping)
+                        Button("Stop now") { reader.stopNow() }.controlSize(.small)
+                    } else if reader.asking {
+                        Button("Cancel the answer") { reader.cancelAsk() }.controlSize(.small)
+                    } else if reader.hasWork, reader.blocker == nil {
+                        Button("Read now") { reader.startReading() }.controlSize(.small)
+                    }
+                }
+                ReaderStatusStrip(model: model, go: { model.showReader($0) })
+                Button("Details") { model.statusTab = .reading }.buttonStyle(.link).font(.system(size: 12))
+            }
+        }
+    }
+}
+
+/// Your goals: what you are trying to find out, and the questions the reader writes from it
+/// and keeps answered. In the stream's list above ALL, because the lenses read it with
+/// every chunk.
+struct GoalsView: View {
+    let model: AppModel
+
+    var body: some View {
+        ReaderPage(title: "What are you trying to find out?", lede: "Every lens reads this with every chunk, and the questions below are written from it, answered from the notes with your words cited, and answered again as you add more.") {
             GoalsBlock(model: model)
             KeptQuestions(model: model)
         }
