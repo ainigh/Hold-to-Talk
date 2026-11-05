@@ -217,9 +217,13 @@ final class AppModel {
 
     /// ⌘⇧H and a click on the menu bar icon: the window closes when it is open in front, else it
     /// opens (or comes to the front).
+    ///
+    /// "In front" is what the person sees, not whether macOS made Holdnote the active app (since
+    /// macOS 14 an activation request can be declined): a window any part of which is on screen
+    /// closes; one fully covered by other windows comes forward instead.
     func toggleWindow() {
-        if let window, window.isVisible, !window.isMiniaturized, NSApp.isActive {
-            window.performClose(nil)
+        if let window, window.isVisible, !window.isMiniaturized, NSApp.isActive || window.occlusionState.contains(.visible) {
+            window.close()
         } else {
             if let window, window.isMiniaturized { window.deminiaturize(nil) }
             showWindow()
