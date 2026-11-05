@@ -60,10 +60,15 @@ struct NotesFileList: View {
     }
 }
 
-/// The note file chosen in the list, to read and edit. Answers are made from whatever is here.
+/// The note file chosen in the list. Markdown files read as a page (headings, lists, tables),
+/// with Edit for the raw text; the rest (the numbered sentences, JSON, the log) show as they
+/// are. Answers are made from whatever is here, so what you edit is what the model sees.
 struct NotesEditor: View {
     let model: AppModel
+    @State private var editing = false
     @StateObject private var flash = FlashState()
+
+    private var isMarkdown: Bool { model.reader.currentFile?.lowercased().hasSuffix(".md") == true }
 
     var body: some View {
         @Bindable var reader = model.reader
@@ -73,15 +78,34 @@ struct NotesEditor: View {
                 if reader.fileDirty { Text("· edited").font(.system(size: 11)).foregroundStyle(.secondary) }
                 Spacer()
                 Flash(text: flash.text)
+                if isMarkdown {
+                    Picker("", selection: $editing) {
+                        Text("Read").tag(false)
+                        Text("Edit").tag(true)
+                    }
+                    .pickerStyle(.segmented).labelsHidden().controlSize(.small).fixedSize()
+                }
                 Text("⌘S").font(.system(size: 11)).foregroundStyle(.tertiary)
                 Button("Save") { if let msg = reader.saveFile() { flash.show(msg) } }
                     .disabled(!reader.fileDirty).keyboardShortcut("s", modifiers: .command)
             }
             .padding(.horizontal, 16).padding(.vertical, 8)
             Divider()
-            TextEditor(text: $reader.fileBody)
-                .font(.system(size: 12, design: .monospaced))
-                .disabled(reader.currentFile == nil)
+            if reader.currentFile == nil {
+                Text("Select a file on the left.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if isMarkdown, !editing {
+                ScrollView {
+                    MarkdownText(reader.fileBody)
+                        .padding(20)
+                        .frame(maxWidth: 760, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                TextEditor(text: $reader.fileBody)
+                    .font(.system(size: 12, design: .monospaced))
+            }
         }
+        // A file opened fresh reads first; one you were editing stays in the editor.
+        .onChange(of: reader.currentFile) { _, _ in if !reader.fileDirty { editing = false } }
     }
 }

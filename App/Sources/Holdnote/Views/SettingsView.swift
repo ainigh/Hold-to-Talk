@@ -82,7 +82,7 @@ struct GeneralSettings: View {
                     Text("Newest first, by day").tag(Settings.ListOrder.newestFirst)
                     Text("My own order").tag(Settings.ListOrder.custom)
                 }
-                Text("In your own order, drag recordings and notes up and down to say what came from what; the top is the latest. Copy All, All Text, export and the reader's stream follow it.")
+                Text("In your own order, drag recordings and notes up and down to say what came from what; the top is the latest. Copy All, the whole stream, export and the reader's stream follow it.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {

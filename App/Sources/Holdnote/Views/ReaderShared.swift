@@ -2,19 +2,17 @@ import AppKit
 import Harness
 import SwiftUI
 
-/// The reader's views, in the order you use them, as they appear in the window's first column
-/// under Recordings: Ask (your goals, the questions it keeps answered, and anything else), For
-/// you (what it needs you to tell it), Reading (what it is doing, and the lenses), Stream (what
-/// goes in), Notes (the files it writes).
+/// The reader's views. Ask (a conversation about the stream) and For you (what it needs you to
+/// tell it) sit beside the Stream in the window's first column; Reading (what it is doing, and
+/// the lenses) and Notes (the files it writes) are under the hood, below.
 enum ReaderView: String, CaseIterable, Identifiable {
-    case ask, forYou, reading, stream, notes
+    case ask, forYou, reading, notes
     var id: String { rawValue }
     var title: String {
         switch self {
         case .ask: "Ask"
         case .forYou: "For you"
         case .reading: "Reading"
-        case .stream: "Stream"
         case .notes: "Notes"
         }
     }
@@ -23,10 +21,11 @@ enum ReaderView: String, CaseIterable, Identifiable {
         case .ask: "bubble.left.and.text.bubble.right"
         case .forYou: "questionmark.bubble"
         case .reading: "eyeglasses"
-        case .stream: "text.alignleft"
         case .notes: "doc.text"
         }
     }
+    /// The two you use; the other two show how it works.
+    var isMain: Bool { self == .ask || self == .forYou }
 }
 
 /// Asks before something is lost, with AppKit's own alert. SwiftUI's confirmationDialog, hosted

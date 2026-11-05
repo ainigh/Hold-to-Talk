@@ -3,10 +3,10 @@ import Harness
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The one window, in columns. The first lists everything Holdnote has (recordings, the reader's
-/// views, settings, setup) with what the menu bar menu used to hold under it; choosing a row opens
-/// the columns it needs: the recordings list, the note files or the settings pages, then the page
-/// itself on the right.
+/// The one window, in columns. The first names the three things you use (the Stream, Ask, For
+/// you), what is under the hood, and settings; choosing a row opens the columns it needs: the
+/// stream's items, the note files or the settings pages, then the page itself on the right.
+/// The Stream is the real input: everything you add, as one text, or one item of it at a time.
 struct MainWindow: View {
     @Bindable var model: AppModel
     @AppStorage("listColumnWidth") private var listWidth: Double = 320
@@ -40,14 +40,14 @@ struct MainWindow: View {
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 UpdateStatus(updater: model.updater)
-                Toggle(isOn: $model.showingAll) { Label("All Text", systemImage: "doc.plaintext") }
-                    .help("Every transcript in the list as one continuous text (⌘⇧A). Select all and copy, or Copy All.")
+                Toggle(isOn: wholeStream) { Label("Whole stream", systemImage: "doc.plaintext") }
+                    .help("The whole stream as one continuous text, exactly what the reader reads (⌘⇧A). Select a passage and right-click to ask about it.")
                 Button { model.pasteText() } label: { Label("Paste", systemImage: "doc.on.clipboard") }
-                    .help("The clipboard's text as a new note (⌘⇧V)")
+                    .help("Add the clipboard's text to the stream as a note (⌘⇧V)")
                 Button { model.importFiles() } label: { Label("Import", systemImage: "square.and.arrow.down") }
-                    .help("Audio files (m4a, mp3, wav…) are transcribed; text files (.txt, .md) become notes (⌘⇧I). Or drop them on the window.")
+                    .help("Add audio files (m4a, mp3, wav…), transcribed here, or text files (.txt, .md) to the stream (⌘⇧I). Or drop them on the window.")
                 Button { model.copyAll() } label: { Label("Copy All", systemImage: "doc.on.doc") }
-                    .help("Copy every transcript in the list, in the list's order (⌘⇧C)")
+                    .help("Copy the whole stream, in the list's order (⌘⇧C)")
                     .disabled(model.listed.isEmpty)
                 Button {
                     if reader.running { reader.stopAfterCall() } else { model.showReader(.reading); reader.startReading() }
@@ -76,6 +76,16 @@ struct MainWindow: View {
         .onAppear { reader.refreshStream(); reader.refreshFiles() }
         // A transcript finishing changes no count, so the reader is told about any change in status or text.
         .onChange(of: libraryFingerprint) { _, _ in reader.libraryChanged() }
+    }
+
+    /// The toolbar's Whole stream: on when the stream shows as one text (by choice, or because
+    /// no item is chosen); off picks the first item.
+    private var wholeStream: Binding<Bool> {
+        Binding(get: { model.showingAll || model.selection.isEmpty },
+                set: { on in
+                    if on { model.showWholeStream() }
+                    else { model.showingAll = false; if model.selection.isEmpty, let first = model.listed.first { model.selection = [first.id] } }
+                })
     }
 
     /// Changes when a recording is added, removed, finishes or is edited.
@@ -110,7 +120,6 @@ struct MainWindow: View {
         case .reader(.ask): ReaderAskView(model: model, go: { model.showReader($0) })
         case .reader(.forYou): ReaderForYouView(model: model, go: { model.showReader($0) })
         case .reader(.reading): ReaderReadingView(model: model, go: { model.showReader($0) })
-        case .reader(.stream): ReaderStreamView(model: model, go: { model.showReader($0) })
         case .reader(.notes): NotesEditor(model: model)
         case .readerGuide: ReaderAboutView()
         case let .settings(tab): SettingsPage(model: model, tab: tab)
@@ -118,22 +127,19 @@ struct MainWindow: View {
         }
     }
 
+    /// One item's text when one is chosen, or the whole stream as one text.
     @ViewBuilder
     private var recordings: some View {
         let selected = model.selectedRecordings
-        if model.showingAll, !model.listed.isEmpty {
-            AllTextView(model: model)
-        } else if model.library.recordings.isEmpty {
+        if model.library.recordings.isEmpty {
             EmptyState(hotkey: model.settings.settings.hotkey)
-        } else if selected.count == 1, let r = selected.first {
+        } else if !model.showingAll, selected.count == 1, let r = selected.first {
             TranscriptView(model: model, recording: r)
                 .id(r.id)
-        } else if selected.count > 1 {
+        } else if !model.showingAll, selected.count > 1 {
             MultiSelection(model: model, count: selected.count)
         } else {
-            Text("Select a recording")
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            StreamTextView(model: model)
         }
     }
 }
@@ -158,10 +164,10 @@ struct EmptyState: View {
             Text("Double-tap it to record hands-free; tap once to stop. Or turn on Voice Detection and just talk.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
-            Text("Audio files (an m4a from Voice Memos, say) and text files can be dropped here, or added with ⌘⇧I.")
+            Text("Or drop audio files (an m4a from Voice Memos, say) or text files here, or paste text (⌘⇧V). Each becomes an item in the stream, and every item becomes text.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
-            Text("Everything you record is read by the reader as you go: it asks you about what it can't place, and answers what you ask about it (⌘2).")
+            Text("The reader reads the stream as it grows, asks you about what it can't place (For you), and answers what you ask about it (Ask, ⌘2).")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }
@@ -175,7 +181,7 @@ struct MultiSelection: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("\(count) recordings selected").font(.title3)
+            Text("\(count) items selected").font(.title3)
             HStack(spacing: 12) {
                 Button("Copy all") { model.copySelected() }
                 Button("Delete", role: .destructive) { model.deleteSelected() }

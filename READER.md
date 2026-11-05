@@ -21,11 +21,12 @@ The expensive reading is done in small pieces as you talk, in the background, in
 
 ## Where it shows
 
-- **Beside every transcript**, the Reader panel: whether the recording is in the stream yet and read, the questions it raised for you, what each lens noticed in it, and questions about that recording alone (its sentences are read first). A recording edited after it joined can join again as a correction. In the list, a mark says when the reader has questions about a recording, or when an edit hasn't reached it yet.
-- **Ask**: your goals, the questions kept answered, and anything else you want to ask.
-- **For you**: the reader's questions, under the recording each came from.
-- **Reading**: what it is doing now (the chunk in hand and which lenses have read it, what the model is writing as it writes it, the log), how far it has come, and the lenses.
-- **Stream**: what goes in; **Notes**: the files it writes.
+The window has three things you use, named in its first column, and the rest under the hood.
+
+- **Stream**: everything you add (recordings, dropped or imported audio, pasted or dropped text), each item text. Choose an item for its own text, with the Reader panel beside it: whether it is in the stream yet and read, the questions it raised for you, what each lens noticed in it, and questions about that item alone (its sentences are read first). An item edited after it joined can join again as a correction. Choose none for the whole stream as one text, which is exactly what the reader reads; select a passage and right-click to ask about it.
+- **Ask**: a conversation about the stream, with the field under it. Your goals and the questions kept answered about them fold out at the top.
+- **For you**: the reader's questions, under the item each came from.
+- **Under the hood. Reading**: what it is doing now (the chunk in hand and which lenses have read it, what the model is writing as it writes it, the log), how far it has come, and the lenses. **Notes**: the files it writes, rendered. **Guide**: this document.
 
 ## The lenses
 
@@ -75,9 +76,9 @@ A rest (default 20 seconds) is taken after every call while reading, so a larger
 
 ## Decisions made on your behalf
 
-- A transcript joins the stream once it has been final and unedited for a minute (Settings → Reader sets how long, or turns joining by itself off; **Add them now** on the Stream view does it at once). It joins in the order things happened (the list read from the bottom up), beginning with its date and time. Edit it after it joined and the Reader panel offers to add the corrected text; the earlier sentences keep their ids and the correction says what it replaces.
+- A transcript joins the stream once it has been final and unedited for a minute (Settings → Reader sets how long, or turns joining by itself off; **Add to the reader now** on the whole-stream view does it at once). It joins in the order things happened (the list read from the bottom up), beginning with its date and time. Edit it after it joined and the Reader panel offers to add the corrected text; the earlier sentences keep their ids and the correction says what it replaces.
 - A spoken answer to one of the reader's questions joins as that answer, not as a transcript of its own.
-- Text also enters by pasting into the stream box, or dropping a text file on it. A `stream.txt` already in the folder is numbered when reading first starts. Splitting is on sentence punctuation and line breaks. Ids are fixed-width (five digits) so they sort and grep cleanly.
+- Text also enters by pasting it as a note (⌘⇧V), or dropping a text file or loose text on the window; each is an item of the stream like a recording. A `stream.txt` already in the folder is numbered when reading first starts. Splitting is on sentence punctuation and line breaks. Ids are fixed-width (five digits) so they sort and grep cleanly.
 - Reading starts by itself when there is something new, Ollama answers, and nothing is being recorded or transcribed. Text that joins while it reads is read in the same run. Stopping it by hand pauses it until you click Read now; a failure pauses it for ten minutes (or until Ollama answers again).
 - The questions about your goals are written again when the goals change (or with New questions); answers to questions still asked are kept. Each answer is refreshed once the stream has grown by 60 sentences since (Settings → Reader). Your `corrections.md` and `answers.md` are never touched by the reader.
 - Clear progress makes every lens read from the start again; use it after changing a lens's instructions. Changing W or M does not: positions are counted in sentences, and notebooks are compressed to a new M as they go.
@@ -91,9 +92,9 @@ A rest (default 20 seconds) is taken after every call while reading, so a larger
 ## Setup
 
 1. Install Ollama and pull a model, e.g. `ollama pull llama3.1:8b`. Start it (the menu bar app, or `ollama serve`). A native app needs no `OLLAMA_ORIGINS`.
-2. Open the reader (⌘⇧N, or Ask in the window's first column). Getting started at the top says what is still missing.
-3. Write your goals. Record something, or paste text. Pick the model in Settings → Reader.
-4. That's all: it reads by itself. Ask on Ask, answer its questions under For you or beside the recording, click any sentence id to see your words and open the recording. Flag what is wrong.
+2. Open Ask (⌘2). Getting started at the top says what is still missing.
+3. Add something to the stream: hold the hotkey and talk, drop an audio or text file on the window, or paste text. Write your goals (the Goals button on Ask) if you have some. Pick the model in Settings → Reader.
+4. That's all: it reads by itself. Ask, answer its questions under For you or beside the item, click any sentence id to see your words and open the recording. Flag what is wrong.
 
 ## Known limits
 

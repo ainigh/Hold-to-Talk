@@ -10,6 +10,9 @@ final class WhisperTranscriber: @unchecked Sendable {
     struct Problem: LocalizedError {
         let errorDescription: String?
         init(_ message: String) { errorDescription = message }
+        /// The run was stopped on purpose (Stop in the window).
+        static let cancelled = Problem("Stopped before it finished. Retry to transcribe it.")
+        var isCancelled: Bool { errorDescription == Problem.cancelled.errorDescription }
     }
 
     struct Result: Sendable {
@@ -36,6 +39,26 @@ final class WhisperTranscriber: @unchecked Sendable {
     let modelsFolder: URL
     private let lock = NSLock()
     private var loaded: (url: URL, ctx: OpaquePointer)?
+    /// Set by `cancel()` from any thread while a run is going; whisper checks it between steps.
+    private let cancelFlag = Flag()
+
+    /// Stops the transcription in progress as soon as whisper reaches its next step; the run
+    /// then fails with `Problem.cancelled`. Safe from any thread. A stop asked for while the
+    /// file is still being decoded holds until `beginRun()` is called again.
+    func cancel() { cancelFlag.set(true) }
+    /// Whether a stop was asked for since `beginRun()`.
+    var isCancelled: Bool { cancelFlag.isOn }
+    /// Called before each recording's run (before its file is decoded), so a stop asked for
+    /// during the decode still counts.
+    func beginRun() { cancelFlag.set(false) }
+
+    /// A thread-safe switch.
+    final class Flag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var on = false
+        var isOn: Bool { lock.lock(); defer { lock.unlock() }; return on }
+        func set(_ v: Bool) { lock.lock(); on = v; lock.unlock() }
+    }
 
     init(modelsFolder: URL) {
         self.modelsFolder = modelsFolder
@@ -127,6 +150,12 @@ final class WhisperTranscriber: @unchecked Sendable {
             guard let data else { return }
             Unmanaged<PartProgress>.fromOpaque(data).takeUnretainedValue().report(Double(percent) / 100)
         }
+        // Stop: whisper asks between steps whether to give up, and does when this says so.
+        params.abort_callback = { data in
+            guard let data else { return false }
+            return Unmanaged<Flag>.fromOpaque(data).takeUnretainedValue().isOn
+        }
+        params.abort_callback_user_data = Unmanaged.passUnretained(cancelFlag).toOpaque()
         let language = options.language.isEmpty ? "auto" : options.language
         let prompt = options.prompt
         let tally = ProgressTally(weights: ranges.map { Double($0.count) / Double(audio.count) }, report: progress)
@@ -148,7 +177,7 @@ final class WhisperTranscriber: @unchecked Sendable {
                     }
                     defer { whisper_free_state(state) }
                     while let i = next.take(ranges.count) {
-                        if collector.stopped { collector.set(i, .failed(-1)); continue }
+                        if collector.stopped || cancelFlag.isOn { collector.set(i, .failed(-1)); continue }
                         let range = ranges[i]
                         let offset = Double(range.lowerBound) / Double(Recorder.modelRate)
                         let part = PartProgress(tally: tally, index: i)
@@ -161,7 +190,7 @@ final class WhisperTranscriber: @unchecked Sendable {
                             // pressure, say); once more with the same state before giving up.
                             for _ in 0..<2 {
                                 status = chunk.withUnsafeBufferPointer { whisper_full_with_state(ctx, state, mine, $0.baseAddress, Int32($0.count)) }
-                                if status == 0 { break }
+                                if status == 0 || cancelFlag.isOn { break }
                             }
                             guard status == 0 else { return .failed(status) }
                             var segments: [Recording.Segment] = []
@@ -181,6 +210,7 @@ final class WhisperTranscriber: @unchecked Sendable {
                 }
             }
         }
+        if cancelFlag.isOn { throw Problem.cancelled }
         var parts: [[Recording.Segment]] = []
         var detected = ""
         for (i, outcome) in collector.outcomes.enumerated() {
@@ -306,7 +336,8 @@ enum AudioDecoder {
     /// stereo WAV of two hours is 2.7 GB as floats).
     static let blockFrames: AVAudioFrameCount = 1 << 16
 
-    static func pcm16k(_ url: URL) throws -> [Float] {
+    /// `stopped` is asked between blocks; when it says so the decode ends with `Problem.cancelled`.
+    static func pcm16k(_ url: URL, stopped: () -> Bool = { false }) throws -> [Float] {
         let file = try AVAudioFile(forReading: url)
         guard let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: Double(Recorder.modelRate), channels: 1, interleaved: false),
               let converter = AVAudioConverter(from: file.processingFormat, to: target) else {
@@ -322,6 +353,7 @@ enum AudioDecoder {
         }
         var atEnd = false
         while !atEnd {
+            if stopped() { throw WhisperTranscriber.Problem.cancelled }
             try file.read(into: input, frameCount: blockFrames)
             if input.frameLength == 0 { break }
             atEnd = file.framePosition >= file.length

@@ -222,7 +222,7 @@ struct ReaderReadingView: View {
     private var estimate: String {
         if reader.running || reader.folder == nil { return "" }
         let c = reader.config
-        if reader.stream.count == 0 { return reader.unfedCount > 0 ? "They join a minute after they settle, or now with Read now." : "Record something, or paste text on the Stream view." }
+        if reader.stream.count == 0 { return reader.unfedCount > 0 ? "They join a minute after they settle, or now with Read now." : "Record something, or add text to the stream." }
         if reader.stream.unread == 0 {
             let p = reader.stream.questionsPending
             if p > 0 { return "\(p) question\(p == 1 ? "" : "s") about your goals to answer from what was read (up to \(c.askSteps + 1) calls each)." }
@@ -245,7 +245,7 @@ struct ReaderReadingView: View {
     private func goFix(_ step: String) {
         switch step {
         case "folder": reader.chooseFolder()
-        case "stream": go(.stream)
+        case "stream": model.show(.recordings)
         case "ollama": model.showSettings(tab: .reader); reader.refreshModels()
         default: break
         }
