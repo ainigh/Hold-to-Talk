@@ -14,6 +14,9 @@ final class Library {
     /// What the transcriber is doing, for the list's status dots and the menu bar glyph.
     private(set) var transcribing: UUID?
     private(set) var transcribingProgress: Double = 0
+    /// What the transcriber is at, for the transcript pane: reading the file, or which chunk
+    /// of how many is done when the audio was split. Empty when there's nothing to add.
+    private(set) var transcribingNote = ""
     /// Recordings deleted and still undoable, newest deletion last.
     private(set) var pendingDeletes: [Recording] = []
     @ObservationIgnored private var deleteTimer: Timer?
@@ -230,6 +233,7 @@ final class Library {
         guard let r = recording(job.id) else { runQueue(); return }
         transcribing = job.id
         transcribingProgress = 0
+        transcribingNote = ""
         let samples = samplesInMemory.removeValue(forKey: job.id)
         let audioURL = store.audioURL(for: r)
         let s = settings()
@@ -244,12 +248,18 @@ final class Library {
                 if let samples, !samples.isEmpty {
                     audio = samples
                 } else if let audioURL {
+                    // An imported file can be long and in any format: decoding it is work of its own.
+                    await MainActor.run { [weak self] in self?.transcribingNote = "Reading the file…" }
                     audio = try AudioDecoder.pcm16k(audioURL)
+                    await MainActor.run { [weak self] in self?.transcribingNote = "" }
                 } else {
                     throw WhisperTranscriber.Problem("The audio was deleted; there's nothing to transcribe.")
                 }
                 outcome = .success(try transcriber.transcribe(audio, model: model, options: options) { p in
-                    Task { @MainActor [weak self] in self?.transcribingProgress = p }
+                    Task { @MainActor [weak self] in
+                        self?.transcribingProgress = p.fraction
+                        self?.transcribingNote = p.chunks > 1 ? "\(p.chunksDone) of \(p.chunks) chunks" : ""
+                    }
                 })
             } catch {
                 outcome = .failure(error)
@@ -262,6 +272,7 @@ final class Library {
 
     private func finished(_ id: UUID, appendTo: UUID?, outcome: Swift.Result<WhisperTranscriber.Result, Error>, removeFillers: Bool) {
         transcribing = nil
+        transcribingNote = ""
         defer { runQueue() }
         guard let i = index(id) else { return }
         switch outcome {

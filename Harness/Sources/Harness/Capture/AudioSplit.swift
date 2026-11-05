@@ -1,24 +1,42 @@
 import Foundation
 
-/// Cuts long audio into parts that can be transcribed at the same time. The cuts land on the
-/// quietest moment near each even boundary, so no word is split; parts are transcribed on their
-/// own and their segments put back in order with their times offset. Pure, so it is tested here.
+/// Cuts long audio into chunks of about five minutes that are transcribed a few at a time. The
+/// cuts land on the quietest moment near each even boundary, so no word is split; chunks are
+/// transcribed on their own, by a small pool of workers that each take the next chunk when
+/// they finish one, and their segments are put back in order with their times offset. Pure,
+/// so it is tested here.
+///
+/// Why chunks and workers are two numbers: a two-hour file in four long parts is only as fast
+/// as its slowest part, and progress crawls; the same file in 24 five-minute chunks on four
+/// workers keeps every worker busy to the end, shows progress that moves, and costs the memory
+/// of four whisper states rather than 24. The GPU is one device: past a few workers, more only
+/// share it more thinly.
 public enum AudioSplit {
     /// Audio shorter than this is never split.
     public static let minimumToSplit: TimeInterval = 120
-    /// Each part is at least this long: whisper works in 30 s windows, and a boundary costs a
+    /// Each chunk is at least this long: whisper works in 30 s windows, and a boundary costs a
     /// little context on either side.
     public static let minimumPart: TimeInterval = 60
-    /// Parts run at once; past this the GPU is shared too thinly to gain.
-    public static let maximumParts = 8
-    public static let automaticParts = 4
+    /// Chunks aim for this length; a 2 h file makes 24 of them.
+    public static let targetPart: TimeInterval = 300
+    /// Chunks transcribed at once; past this the GPU is shared too thinly to gain.
+    public static let maximumAtOnce = 8
+    public static let automaticAtOnce = 4
 
-    /// How many parts to make of `seconds` of audio. `requested` is the setting: 0 for automatic
-    /// (up to four, once there's two minutes of audio), 1 for never, else that many at most.
-    public static func parts(seconds: TimeInterval, requested: Int = 0) -> Int {
-        let ceiling = requested <= 0 ? automaticParts : min(maximumParts, requested)
-        guard ceiling > 1, seconds >= minimumToSplit else { return 1 }
-        return max(1, min(ceiling, Int(seconds / minimumPart)))
+    /// How many chunks run at once. `requested` is the setting: 0 for automatic (four), 1 for
+    /// never splitting, else that many at most.
+    public static func workers(requested: Int = 0) -> Int {
+        requested <= 0 ? automaticAtOnce : min(maximumAtOnce, requested)
+    }
+
+    /// How many chunks to make of `seconds` of audio for `workers` running at once: enough that
+    /// none is longer than `targetPart`, and at least enough to keep every worker busy, as long
+    /// as each stays at least `minimumPart`. One for short audio, or when splitting is off.
+    public static func parts(seconds: TimeInterval, workers: Int = automaticAtOnce) -> Int {
+        guard workers > 1, seconds >= minimumToSplit else { return 1 }
+        let mostAllowed = max(1, Int(seconds / minimumPart))
+        let forLength = Int((seconds / targetPart).rounded(.up))
+        return max(1, min(mostAllowed, max(forLength, workers)))
     }
 
     /// `samples` cut into `parts` ranges that cover it all, in order, each boundary moved to the
@@ -49,6 +67,30 @@ public enum AudioSplit {
         }
         cuts.append(n)
         return (0..<parts).map { cuts[$0]..<cuts[$0 + 1] }.filter { !$0.isEmpty }
+    }
+
+    /// The chunks' segments, in order, as one transcript. Whisper tends to hear the words at a
+    /// cut twice, once at the end of one chunk and once at the start of the next, or to repeat a
+    /// chunk's last line into the silence after it: a segment that says what the one before it
+    /// said (bar case and punctuation) is dropped. Segments' times are already offset.
+    public static func joined(_ parts: [[Recording.Segment]]) -> [Recording.Segment] {
+        var out: [Recording.Segment] = []
+        for part in parts {
+            for segment in part {
+                if let last = out.last, key(last.text) == key(segment.text), !key(segment.text).isEmpty {
+                    // The same words again straddling a cut, or an echo: keep the first, but let
+                    // it reach to where the repeat ended so no time goes unaccounted for.
+                    out[out.count - 1].end = max(last.end, segment.end)
+                    continue
+                }
+                out.append(segment)
+            }
+        }
+        return out
+    }
+
+    static func key(_ text: String) -> String {
+        String(text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) })
     }
 
     /// Root mean square of a stretch: how loud it is.

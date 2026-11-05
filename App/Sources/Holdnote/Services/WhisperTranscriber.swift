@@ -18,10 +18,18 @@ final class WhisperTranscriber: @unchecked Sendable {
         let model: String
     }
 
+    /// How far a transcription is: the fraction of the audio done, weighted by chunk, and the
+    /// chunks finished of the chunks there are (1 of 1 for audio that wasn't split).
+    struct Progress: Sendable {
+        var fraction: Double
+        var chunksDone: Int
+        var chunks: Int
+    }
+
     struct Options: Sendable {
         var language = "auto"
         var prompt = ""
-        /// Long audio in this many parts at once (the setting): 0 automatic, 1 never.
+        /// Long audio's chunks, this many at once (the setting): 0 automatic, 1 never split.
         var parallelParts = 0
     }
 
@@ -69,10 +77,11 @@ final class WhisperTranscriber: @unchecked Sendable {
     }
 
     /// Transcribes 16 kHz mono samples. One recording at a time; call off the main thread.
-    /// Long audio is cut at quiet moments into parts (`AudioSplit`) that run at the same time,
-    /// each with its own whisper state on the one loaded model, and their segments are joined
-    /// back in order with their times offset.
-    func transcribe(_ samples: [Float], model name: String, options: Options, progress: @escaping @Sendable (Double) -> Void) throws -> Result {
+    /// Long audio is cut at quiet moments into chunks of about five minutes (`AudioSplit`); a
+    /// few workers, each with its own whisper state on the one loaded model, take the next
+    /// chunk as they finish one, and the chunks' segments are joined back in order with their
+    /// times offset. A chunk that fails is tried once more before the whole is given up.
+    func transcribe(_ samples: [Float], model name: String, options: Options, progress: @escaping @Sendable (Progress) -> Void) throws -> Result {
         lock.lock()
         defer { lock.unlock() }
         let url = modelURL(name)
@@ -98,8 +107,10 @@ final class WhisperTranscriber: @unchecked Sendable {
         // Whisper hears nothing in under a second of audio; pad so it doesn't fail outright.
         let audio = samples.count < Recorder.modelRate ? samples + [Float](repeating: 0, count: Recorder.modelRate - samples.count) : samples
 
-        let parts = AudioSplit.parts(seconds: Double(audio.count) / Double(Recorder.modelRate), requested: options.parallelParts)
-        let ranges = AudioSplit.ranges(audio, rate: Recorder.modelRate, parts: parts)
+        let seconds = Double(audio.count) / Double(Recorder.modelRate)
+        let workers = AudioSplit.workers(requested: options.parallelParts)
+        let ranges = AudioSplit.ranges(audio, rate: Recorder.modelRate, parts: AudioSplit.parts(seconds: seconds, workers: workers))
+        let atOnce = min(workers, ranges.count)
         let cores = max(2, ProcessInfo.processInfo.activeProcessorCount - 2)
 
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
@@ -111,7 +122,7 @@ final class WhisperTranscriber: @unchecked Sendable {
         params.no_context = true
         params.single_segment = false
         params.suppress_blank = true
-        params.n_threads = Int32(max(2, cores / ranges.count))
+        params.n_threads = Int32(max(2, cores / atOnce))
         params.progress_callback = { _, _, percent, data in
             guard let data else { return }
             Unmanaged<PartProgress>.fromOpaque(data).takeUnretainedValue().report(Double(percent) / 100)
@@ -120,55 +131,91 @@ final class WhisperTranscriber: @unchecked Sendable {
         let prompt = options.prompt
         let tally = ProgressTally(weights: ranges.map { Double($0.count) / Double(audio.count) }, report: progress)
         let collector = PartCollector(count: ranges.count)
-        // The C strings live for the whole run: every part's params point at them.
+        let next = ChunkCounter()
+        // The C strings live for the whole run: every chunk's params point at them.
         language.withCString { lang in
             prompt.withCString { p in
                 params.language = lang
                 params.detect_language = false
                 params.initial_prompt = prompt.isEmpty ? nil : p
                 let base = params
-                DispatchQueue.concurrentPerform(iterations: ranges.count) { i in
-                    let range = ranges[i]
-                    let offset = Double(range.lowerBound) / Double(Recorder.modelRate)
-                    let part = PartProgress(tally: tally, index: i)
-                    var mine = base
-                    mine.progress_callback_user_data = Unmanaged.passUnretained(part).toOpaque()
-                    let chunk = Array(audio[range])
-                    let outcome: PartCollector.Outcome = withExtendedLifetime(part) { () -> PartCollector.Outcome in
-                        guard let state = whisper_init_state(ctx) else { return .failed(-1) }
-                        defer { whisper_free_state(state) }
-                        let status = chunk.withUnsafeBufferPointer { whisper_full_with_state(ctx, state, mine, $0.baseAddress, Int32($0.count)) }
-                        guard status == 0 else { return .failed(status) }
-                        var segments: [Recording.Segment] = []
-                        for s in 0..<whisper_full_n_segments_from_state(state) {
-                            let t0 = Double(whisper_full_get_segment_t0_from_state(state, s)) / 100
-                            let t1 = Double(whisper_full_get_segment_t1_from_state(state, s)) / 100
-                            let text = String(cString: whisper_full_get_segment_text_from_state(state, s)).trimmingCharacters(in: .whitespaces)
-                            guard !text.isEmpty, !Self.isNoise(text) else { continue }
-                            segments.append(Recording.Segment(start: offset + t0, end: offset + t1, text: text))
-                        }
-                        let found = String(cString: whisper_lang_str(whisper_full_lang_id_from_state(state)))
-                        return .done(segments, language: found)
+                // Each worker keeps one state (whisper's working memory for a run; its cost is
+                // paid once per worker, not per chunk) and takes chunks until there are none.
+                DispatchQueue.concurrentPerform(iterations: atOnce) { _ in
+                    guard let state = whisper_init_state(ctx) else {
+                        while let i = next.take(ranges.count) { collector.set(i, .failed(-1)) }
+                        return
                     }
-                    collector.set(i, outcome)
+                    defer { whisper_free_state(state) }
+                    while let i = next.take(ranges.count) {
+                        if collector.stopped { collector.set(i, .failed(-1)); continue }
+                        let range = ranges[i]
+                        let offset = Double(range.lowerBound) / Double(Recorder.modelRate)
+                        let part = PartProgress(tally: tally, index: i)
+                        var mine = base
+                        mine.progress_callback_user_data = Unmanaged.passUnretained(part).toOpaque()
+                        let chunk = Array(audio[range])
+                        let outcome: PartCollector.Outcome = withExtendedLifetime(part) { () -> PartCollector.Outcome in
+                            var status: Int32 = -1
+                            // A chunk can fail on its own (whisper's buffers under memory
+                            // pressure, say); once more with the same state before giving up.
+                            for _ in 0..<2 {
+                                status = chunk.withUnsafeBufferPointer { whisper_full_with_state(ctx, state, mine, $0.baseAddress, Int32($0.count)) }
+                                if status == 0 { break }
+                            }
+                            guard status == 0 else { return .failed(status) }
+                            var segments: [Recording.Segment] = []
+                            for s in 0..<whisper_full_n_segments_from_state(state) {
+                                let t0 = Double(whisper_full_get_segment_t0_from_state(state, s)) / 100
+                                let t1 = Double(whisper_full_get_segment_t1_from_state(state, s)) / 100
+                                let text = String(cString: whisper_full_get_segment_text_from_state(state, s)).trimmingCharacters(in: .whitespaces)
+                                guard !text.isEmpty, !Self.isNoise(text) else { continue }
+                                segments.append(Recording.Segment(start: offset + t0, end: offset + t1, text: text))
+                            }
+                            let found = String(cString: whisper_lang_str(whisper_full_lang_id_from_state(state)))
+                            return .done(segments, language: found)
+                        }
+                        collector.set(i, outcome)
+                        tally.finished(i)
+                    }
                 }
             }
         }
-        var segments: [Recording.Segment] = []
+        var parts: [[Recording.Segment]] = []
         var detected = ""
-        for outcome in collector.outcomes {
+        for (i, outcome) in collector.outcomes.enumerated() {
             switch outcome {
             case .some(.done(let segs, let lang)):
-                segments += segs
+                parts.append(segs)
                 if detected.isEmpty { detected = lang }
             case .some(.failed(let status)):
-                throw Problem("whisper failed (\(status)).")
+                let at = Double(ranges[i].lowerBound) / Double(Recorder.modelRate)
+                throw Problem(ranges.count > 1 ? "whisper failed (\(status)) on the part starting at \(Self.clock(at))." : "whisper failed (\(status)).")
             case .none:
                 throw Problem("whisper failed.")
             }
         }
-        progress(1)
-        return Result(segments: segments, language: detected, model: name)
+        progress(Progress(fraction: 1, chunksDone: ranges.count, chunks: ranges.count))
+        return Result(segments: AudioSplit.joined(parts), language: detected, model: name)
+    }
+
+    /// "1:07:05" for 4025 s; "7:05" under an hour.
+    static func clock(_ seconds: TimeInterval) -> String {
+        let s = Int(seconds.rounded())
+        return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60)
+    }
+
+    /// Hands out chunk indexes in order, one to whichever worker asks next.
+    final class ChunkCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var next = 0
+        func take(_ count: Int) -> Int? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard next < count else { return nil }
+            next += 1
+            return next - 1
+        }
     }
 
     /// One part's progress, weighted into the whole's.
@@ -179,13 +226,14 @@ final class WhisperTranscriber: @unchecked Sendable {
         func report(_ fraction: Double) { tally.set(index, fraction) }
     }
 
-    /// The parts' progress added up by their share of the audio.
+    /// The chunks' progress added up by their share of the audio, and how many are finished.
     final class ProgressTally: @unchecked Sendable {
         private let lock = NSLock()
         private var fractions: [Double]
+        private var done = 0
         private let weights: [Double]
-        private let report: @Sendable (Double) -> Void
-        init(weights: [Double], report: @escaping @Sendable (Double) -> Void) {
+        private let report: @Sendable (Progress) -> Void
+        init(weights: [Double], report: @escaping @Sendable (Progress) -> Void) {
             self.weights = weights
             fractions = Array(repeating: 0, count: weights.count)
             self.report = report
@@ -193,9 +241,20 @@ final class WhisperTranscriber: @unchecked Sendable {
         func set(_ i: Int, _ fraction: Double) {
             lock.lock()
             fractions[i] = max(fractions[i], min(1, fraction))
-            let total = zip(fractions, weights).reduce(0) { $0 + $1.0 * $1.1 }
+            let p = current
             lock.unlock()
-            report(total)
+            report(p)
+        }
+        func finished(_ i: Int) {
+            lock.lock()
+            fractions[i] = 1
+            done += 1
+            let p = current
+            lock.unlock()
+            report(p)
+        }
+        private var current: Progress {
+            Progress(fraction: zip(fractions, weights).reduce(0) { $0 + $1.0 * $1.1 }, chunksDone: done, chunks: weights.count)
         }
     }
 
@@ -204,9 +263,18 @@ final class WhisperTranscriber: @unchecked Sendable {
         enum Outcome { case done([Recording.Segment], language: String), failed(Int32) }
         private let lock = NSLock()
         private var slots: [Outcome?]
+        private var failed = false
         init(count: Int) { slots = Array(repeating: nil, count: count) }
-        func set(_ i: Int, _ outcome: Outcome) { lock.lock(); slots[i] = outcome; lock.unlock() }
+        func set(_ i: Int, _ outcome: Outcome) {
+            lock.lock()
+            slots[i] = outcome
+            if case .failed = outcome { failed = true }
+            lock.unlock()
+        }
         var outcomes: [Outcome?] { lock.lock(); defer { lock.unlock() }; return slots }
+        /// Once a chunk has failed for good the whole will be given up: the rest are skipped
+        /// rather than run for nothing.
+        var stopped: Bool { lock.lock(); defer { lock.unlock() }; return failed }
     }
 
     /// Whisper's markers for silence and sounds ("[BLANK_AUDIO]", "(wind blowing)") aren't words.
@@ -231,34 +299,55 @@ final class WhisperTranscriber: @unchecked Sendable {
 }
 
 /// Decodes any audio file AVFoundation reads into 16 kHz mono float samples (Re-transcribe,
-/// and recordings recovered after a crash).
+/// imported files, and recordings recovered after a crash).
 enum AudioDecoder {
+    /// Read and converted a block at a time, so a two-hour file costs the memory of its 16 kHz
+    /// mono samples (about 460 MB) and one block, not of the whole file as recorded (a 48 kHz
+    /// stereo WAV of two hours is 2.7 GB as floats).
+    static let blockFrames: AVAudioFrameCount = 1 << 16
+
     static func pcm16k(_ url: URL) throws -> [Float] {
         let file = try AVAudioFile(forReading: url)
         guard let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: Double(Recorder.modelRate), channels: 1, interleaved: false),
               let converter = AVAudioConverter(from: file.processingFormat, to: target) else {
             throw WhisperTranscriber.Problem("The audio file's format can't be read.")
         }
-        let frames = AVAudioFrameCount(file.length)
-        guard frames > 0, let input = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: frames) else {
-            throw WhisperTranscriber.Problem("The audio file is empty.")
-        }
-        try file.read(into: input)
+        guard file.length > 0 else { throw WhisperTranscriber.Problem("The audio file is empty.") }
         let ratio = Double(Recorder.modelRate) / file.processingFormat.sampleRate
-        guard let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: AVAudioFrameCount(Double(frames) * ratio) + 1024) else {
+        var out: [Float] = []
+        out.reserveCapacity(Int(Double(file.length) * ratio) + 1024)
+        guard let input = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: blockFrames),
+              let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: AVAudioFrameCount(Double(blockFrames) * ratio) + 1024) else {
             throw WhisperTranscriber.Problem("The audio file is empty.")
         }
-        var consumed = false
-        var error: NSError?
-        converter.convert(to: output, error: &error) { _, status in
-            if consumed { status.pointee = .noDataNow; return nil }
-            consumed = true
-            status.pointee = .haveData
-            return input
+        var atEnd = false
+        while !atEnd {
+            try file.read(into: input, frameCount: blockFrames)
+            if input.frameLength == 0 { break }
+            atEnd = file.framePosition >= file.length
+            // The converter pulls the block once, then is told to wait for the next (or that
+            // the file has ended, so it lets out what its resampler still holds). It is asked
+            // again while it fills the output to the brim, in case a block makes more than fits.
+            var consumed = false
+            var status = AVAudioConverterOutputStatus.haveData
+            repeat {
+                var error: NSError?
+                output.frameLength = 0
+                status = converter.convert(to: output, error: &error) { _, outStatus in
+                    if consumed { outStatus.pointee = atEnd ? .endOfStream : .noDataNow; return nil }
+                    consumed = true
+                    outStatus.pointee = .haveData
+                    return input
+                }
+                if let error { throw error }
+                if let data = output.floatChannelData, output.frameLength > 0 {
+                    out.append(contentsOf: UnsafeBufferPointer(start: data[0], count: Int(output.frameLength)))
+                }
+                if status == .error { throw WhisperTranscriber.Problem("The audio file's format can't be read.") }
+            } while status == .haveData && output.frameLength == output.frameCapacity
+            if status == .endOfStream { break }
         }
-        if let error { throw error }
-        guard let data = output.floatChannelData else { return [] }
-        return Array(UnsafeBufferPointer(start: data[0], count: Int(output.frameLength)))
+        return out
     }
 
     /// The file's length in seconds.
