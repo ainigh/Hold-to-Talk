@@ -89,6 +89,11 @@ public enum TranscriptText {
     }
 
     /// `m:ss` (or `h:mm:ss`) for the list and the HUD.
+    /// How many words a text has (runs of non-whitespace).
+    public static func wordCount(_ text: String) -> Int {
+        text.split(whereSeparator: \.isWhitespace).count
+    }
+
     public static func duration(_ seconds: TimeInterval) -> String {
         let total = max(0, Int(seconds.rounded(.down)))
         let h = total / 3600, m = (total % 3600) / 60, s = total % 60

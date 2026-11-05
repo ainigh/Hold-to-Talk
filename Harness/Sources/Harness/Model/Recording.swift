@@ -70,6 +70,11 @@ public struct Recording: Codable, Equatable, Identifiable, Sendable {
     /// The list's title: the first line of the text, cut to 60 characters.
     public var title: String { TranscriptText.title(text, status: status) }
 
+    /// Audio is on disk: the one predicate playback and re-transcribing key on.
+    public var hasAudio: Bool { audioFile != nil }
+    /// Audio was recorded for it (its length is known), even if the file has since been deleted.
+    public var hadAudio: Bool { audioFile != nil || duration > 0 }
+
     /// Puts a new machine transcript in, keeping your edits on top of it.
     public mutating func replaceMachineText(_ newText: String, segments: [Segment], language: String?, model: String?) {
         text = isEdited ? TranscriptMerge.reapply(edits: text, from: machineText, onto: newText) : newText
