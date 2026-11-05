@@ -23,6 +23,21 @@ final class Library {
     /// how many run at once.
     private(set) var transcribingChunks: [WhisperTranscriber.ChunkProgress] = []
     private(set) var transcribingAtOnce = 1
+    /// What the transcriber is at, in order: reading the file, cutting it into chunks, transcribing.
+    enum Phase: String { case reading = "Reading the file", cutting = "Cutting into chunks", transcribing = "Transcribing" }
+    private(set) var transcribingPhase: Phase = .transcribing
+    /// The model the run in progress uses.
+    private(set) var transcribingModel = ""
+    /// How the last run went: for the footer, and to judge a model or a worker count by.
+    struct LastRun: Equatable {
+        var model: String
+        var audioSeconds: TimeInterval
+        var elapsed: TimeInterval
+        var chunks: Int
+        var atOnce: Int
+        var stopped: Bool
+    }
+    private(set) var lastRun: LastRun?
     /// Recordings deleted and still undoable, newest deletion last.
     private(set) var pendingDeletes: [Recording] = []
     @ObservationIgnored private var deleteTimer: Timer?
@@ -258,7 +273,10 @@ final class Library {
         transcribingStopping = false
         transcribingChunks = []
         transcribingAtOnce = 1
+        transcribingPhase = .transcribing
+        transcribingModel = s.model
         transcriber.beginRun()
+        let started = Date()
         let samples = samplesInMemory.removeValue(forKey: job.id)
         let audioURL = store.audioURL(for: r)
         let s = settings()
@@ -274,15 +292,16 @@ final class Library {
                     audio = samples
                 } else if let audioURL {
                     // An imported file can be long and in any format: decoding it is work of its own.
-                    await MainActor.run { [weak self] in self?.transcribingNote = "Reading the file…" }
+                    await MainActor.run { [weak self] in self?.transcribingPhase = .reading }
                     audio = try AudioDecoder.pcm16k(audioURL) { transcriber.isCancelled }
-                    await MainActor.run { [weak self] in self?.transcribingNote = "" }
+                    await MainActor.run { [weak self] in self?.transcribingPhase = .transcribing }
                 } else {
                     throw WhisperTranscriber.Problem("The audio was deleted; there's nothing to transcribe.")
                 }
                 outcome = .success(try transcriber.transcribe(audio, model: model, options: options) { p in
                     Task { @MainActor [weak self] in
                         guard let self, !self.transcribingStopping else { return }
+                        self.transcribingPhase = p.phase == .cutting ? .cutting : .transcribing
                         self.transcribingProgress = p.fraction
                         self.transcribingChunks = p.parts
                         self.transcribingAtOnce = p.atOnce
@@ -293,13 +312,17 @@ final class Library {
             } catch {
                 outcome = .failure(error)
             }
+            let elapsed = Date().timeIntervalSince(started)
             await MainActor.run { [weak self] in
-                self?.finished(job.id, appendTo: job.appendTo, outcome: outcome, removeFillers: removeFillers)
+                self?.finished(job.id, appendTo: job.appendTo, outcome: outcome, removeFillers: removeFillers, elapsed: elapsed)
             }
         }
     }
 
-    private func finished(_ id: UUID, appendTo: UUID?, outcome: Swift.Result<WhisperTranscriber.Result, Error>, removeFillers: Bool) {
+    private func finished(_ id: UUID, appendTo: UUID?, outcome: Swift.Result<WhisperTranscriber.Result, Error>, removeFillers: Bool, elapsed: TimeInterval) {
+        let stopped: Bool = { if case let .failure(e) = outcome, (e as? WhisperTranscriber.Problem)?.isCancelled == true { return true }; return false }()
+        lastRun = LastRun(model: transcribingModel, audioSeconds: recording(id)?.duration ?? 0, elapsed: elapsed,
+                          chunks: max(1, transcribingChunks.count), atOnce: transcribingAtOnce, stopped: stopped)
         transcribing = nil
         transcribingNote = ""
         transcribingStopping = false

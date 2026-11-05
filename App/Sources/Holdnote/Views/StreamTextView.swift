@@ -8,15 +8,37 @@ import SwiftUI
 struct StreamTextView: View {
     let model: AppModel
     @State private var copied = false
+    @AppStorage("streamAskPanel") private var showAsk = true
 
     private var reader: ReaderController { model.reader }
 
     var body: some View {
+        GeometryReader { geo in
+            let wide = geo.size.width >= 660
+            if showAsk, wide {
+                HStack(spacing: 0) {
+                    stream
+                    Divider()
+                    AskPanel(model: model).frame(width: min(360, max(280, geo.size.width * 0.36)))
+                }
+            } else if showAsk {
+                VSplitView {
+                    stream.frame(minHeight: 200)
+                    AskPanel(model: model).frame(minHeight: 160, idealHeight: 280)
+                }
+            } else {
+                stream
+            }
+        }
+        .onChange(of: model.askDraftRequests) { _, _ in if model.askDraftTarget == nil { showAsk = true } }
+    }
+
+    private var stream: some View {
         let text = model.allText
-        VStack(spacing: 0) {
+        return VStack(spacing: 0) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(model.searchText.isEmpty ? "The stream" : "Items matching “\(model.searchText)”")
+                    Text(model.searchText.isEmpty ? "ALL · the whole stream" : "Items matching “\(model.searchText)”")
                         .font(.system(size: 13, weight: .medium))
                     Text(meta(text)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 }
@@ -32,6 +54,9 @@ struct StreamTextView: View {
                     Task { try? await Task.sleep(for: .milliseconds(1200)); copied = false }
                 } label: { Label(copied ? "Copied" : "Copy All", systemImage: copied ? "checkmark" : "doc.on.doc") }
                 .help("Copy everything shown (⌘⇧C)")
+                Toggle(isOn: $showAsk) { Label("Ask", systemImage: "bubble.left.and.text.bubble.right") }
+                    .toggleStyle(.button).controlSize(.small)
+                    .help(showAsk ? "Hide the conversation about the stream" : "Ask about everything in the stream")
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)

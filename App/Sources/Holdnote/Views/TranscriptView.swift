@@ -48,6 +48,8 @@ struct TranscriptView: View {
             if new != text, !editing || text == recording.text { text = new }
         }
         .onChange(of: text) { _, new in model.library.setText(new, of: recording.id) }
+        .onChange(of: model.askDraftRequests) { _, _ in if model.askDraftTarget == recording.id { showReader = true } }
+        .onAppear { if model.askDraftTarget == recording.id, model.askDraftRequests > 0 { showReader = true } }
         .onDisappear { model.library.saveNow() }
     }
 

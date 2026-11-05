@@ -8,6 +8,9 @@ struct UsageBar: View {
     let monitor: SystemMonitor
     let transcribing: Bool
     var listening = false
+    /// The transcriber: the model in use (or chosen), and how its last run went.
+    var model = ""
+    var lastRun: Library.LastRun? = nil
 
     var body: some View {
         HStack(spacing: 18) {
@@ -24,8 +27,10 @@ struct UsageBar: View {
                 if listening {
                     Label("Listening", systemImage: "ear").foregroundStyle(.secondary)
                 }
-                if transcribing {
-                    Label("Transcribing", systemImage: "waveform").foregroundStyle(.secondary)
+                if !model.isEmpty {
+                    Label(transcribing ? "Transcribing with \(model)" : "whisper \(model)", systemImage: "waveform")
+                        .foregroundStyle(.secondary)
+                        .help(lastRunText ?? "The speech model, as Settings → Transcription has it. It is loaded on first use and kept.")
                 }
             } else {
                 Text("Measuring…").foregroundStyle(.secondary)
@@ -39,6 +44,15 @@ struct UsageBar: View {
         .help(monitor.sample.map { UsageText.explanation($0, transcribing: transcribing) } ?? "")
         .onAppear { monitor.start() }
         .onDisappear { monitor.stop() }
+    }
+}
+
+extension UsageBar {
+    /// "Last: 1:20:00 of audio with base.en in 4:12 · 17 chunks, 4 at once".
+    var lastRunText: String? {
+        guard let r = lastRun else { return nil }
+        let pace = r.elapsed > 0 ? String(format: " (%.1f× real time)", r.audioSeconds / r.elapsed) : ""
+        return "Last run: \(TranscriptText.duration(r.audioSeconds)) of audio with \(r.model) \(r.stopped ? "stopped after" : "in") \(TranscriptText.duration(r.elapsed))\(pace) · \(r.chunks) chunk\(r.chunks == 1 ? "" : "s"), \(r.atOnce) at once"
     }
 }
 

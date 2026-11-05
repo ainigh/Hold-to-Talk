@@ -9,6 +9,7 @@ struct RecordingReaderPanel: View {
     let recording: Recording
     @State private var question = ""
     @State private var expanded: Set<String> = []
+    @FocusState private var asking: Bool
     @StateObject private var flash = FlashState()
 
     private var reader: ReaderController { model.reader }
@@ -41,6 +42,15 @@ struct RecordingReaderPanel: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+        .onAppear { takeDraft() }
+        .onChange(of: model.askDraftRequests) { _, _ in takeDraft() }
+    }
+
+    /// "Ask the reader about it" on this item's row, or a passage from it: the field takes it.
+    private func takeDraft() {
+        guard model.askDraftTarget == recording.id else { return }
+        if !model.askDraft.isEmpty { question = model.askDraft; model.askDraft = "" }
+        asking = true
     }
 
     // MARK: - Where it stands
@@ -166,6 +176,7 @@ struct RecordingReaderPanel: View {
                 TextField("e.g. What was I really worried about here?", text: $question)
                     .textFieldStyle(.roundedBorder)
                     .controlSize(.small)
+                    .focused($asking)
                     .onSubmit { ask() }
                 Button(reader.asking ? "Cancel" : "Ask") { if reader.asking { reader.cancelAsk() } else { ask() } }
                     .controlSize(.small)
