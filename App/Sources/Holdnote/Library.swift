@@ -23,6 +23,8 @@ final class Library {
     @ObservationIgnored var settings: () -> Settings = { Settings() }
     /// Something went wrong loading (said in the window, once).
     private(set) var loadProblems: [String] = []
+    /// The order you dragged the list into (ids, top first), used when Settings says so.
+    private(set) var order: [UUID] = []
 
     init(store: RecordingStore) {
         self.store = store
@@ -33,6 +35,7 @@ final class Library {
         var problems: [String] = []
         recordings = store.loadAll { url, error in problems.append("\(url.lastPathComponent): \(error.localizedDescription)") }
         loadProblems = problems
+        order = store.loadOrder()
         recover()
         applyRetention()
     }
@@ -71,6 +74,33 @@ final class Library {
     }
 
     func recording(_ id: UUID) -> Recording? { recordings.first { $0.id == id } }
+
+    // MARK: - Order
+
+    /// Every recording as the list shows it, top first: newest first, or in your own order.
+    var ordered: [Recording] {
+        settings().listOrder == .custom ? ManualOrder.apply(order, to: recordings) : recordings.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    /// A drag in the list: the rows at `offsets` of `shown` dropped at `destination`.
+    func move(offsets: IndexSet, to destination: Int, shown: [UUID]) {
+        setOrder(ManualOrder.move(offsets: offsets, to: destination, shown: shown, in: ordered.map(\.id)))
+    }
+
+    /// Puts `ids` just above `target` (nil: at the bottom) in your own order.
+    func move(_ ids: [UUID], before target: UUID?) {
+        setOrder(ManualOrder.move(ids, in: ordered.map(\.id), before: target))
+    }
+
+    private func setOrder(_ ids: [UUID]) {
+        order = ids
+        do { try store.saveOrder(ids) } catch { loadProblems.append("order.json: \(error.localizedDescription)") }
+    }
+
+    /// Starts your own order from what the list shows now, so switching changes nothing until you drag.
+    func adoptOrderIfEmpty() {
+        if order.isEmpty { setOrder(recordings.sorted { $0.createdAt > $1.createdAt }.map(\.id)) }
+    }
 
     private func index(_ id: UUID) -> Int? { recordings.firstIndex { $0.id == id } }
 
@@ -118,11 +148,37 @@ final class Library {
         let ext = url.pathExtension.isEmpty ? "audio" : url.pathExtension.lowercased()
         let name = RecordingStore.audioFileName(for: id, ext: ext)
         try FileManager.default.copyItem(at: url, to: store.audioFolder.appendingPathComponent(name))
-        let r = Recording(id: id, duration: duration, audioFile: name, sourceDevice: "Imported: \(url.lastPathComponent)", status: .transcribing)
+        let r = Recording(id: id, createdAt: Self.fileDate(url), duration: duration, audioFile: name, sourceDevice: "Imported: \(url.lastPathComponent)", status: .transcribing)
         recordings.insert(r, at: 0)
         try store.save(r)
         enqueue(id)
         return r
+    }
+
+    /// A text file (.txt, .md, anything plain text) joins the list as a note, dated by the file.
+    @discardableResult
+    func importText(_ url: URL) throws -> Recording {
+        let raw: String
+        do { raw = try String(contentsOf: url, encoding: .utf8) } catch {
+            var encoding = String.Encoding.utf8
+            guard let any = try? String(contentsOf: url, usedEncoding: &encoding) else {
+                throw WhisperTranscriber.Problem("\(url.lastPathComponent) isn't text this Mac can read.")
+            }
+            raw = any
+        }
+        let body = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { throw WhisperTranscriber.Problem("\(url.lastPathComponent) is empty.") }
+        let r = Recording(createdAt: Self.fileDate(url), sourceDevice: "Imported: \(url.lastPathComponent)", machineText: body, text: body, status: .final)
+        recordings.insert(r, at: 0)
+        try store.save(r)
+        return r
+    }
+
+    /// When a file was made (falling back to when it last changed, then now): where an imported
+    /// file belongs among the recordings.
+    static func fileDate(_ url: URL) -> Date {
+        let values = try? url.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
+        return [values?.creationDate, values?.contentModificationDate].compactMap { $0 }.min() ?? Date()
     }
 
     /// The recording was an accident: gone without a trace.
@@ -275,13 +331,15 @@ final class Library {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    /// The transcripts, in the order given (the list's order).
     func copyAll(_ list: [Recording]) {
-        copy(TranscriptText.copyAll(list, headers: settings().copyAllHeaders))
+        copy(TranscriptText.copyAll(list, headers: settings().copyAllHeaders, keepOrder: true))
     }
 
     /// Markdown of the recordings (all, or a selection) into a file or a folder of files.
     func exportMarkdown(_ list: [Recording], combined: Bool) {
-        let sorted = list.sorted { $0.createdAt > $1.createdAt }
+        // In the order given: the list's own.
+        let sorted = list
         if combined {
             let panel = NSSavePanel()
             panel.nameFieldStringValue = "Holdnote export.md"

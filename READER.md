@@ -81,7 +81,7 @@ Cost per night is roughly (number of lenses) × (new tokens ÷ window tokens) mo
 ## Setup
 
 1. Install Ollama and pull a model, e.g. `ollama pull llama3.1:8b`. Start it (the menu bar app, or `ollama serve`). A native app needs no `OLLAMA_ORIGINS`.
-2. Open the reader (⌘⇧N, or the menu bar menu). The checklist on Stream says what is still missing before a first night.
+2. Open the reader (⌘⇧N, or Stream in the window's first column). The checklist on Stream says what is still missing before a first night.
 3. Write your goals. Record something, or paste text. Pick the model in Settings → Reader and set the cool-off. Start the night; the window can be closed.
 4. In the morning, use Morning. Click any sentence id to see your words. Flag what is wrong. Answer the reader's questions on Stream.
 

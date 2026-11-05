@@ -99,7 +99,8 @@ final class ReaderController {
     @ObservationIgnored private var loadedBody = ""
     var fileDirty: Bool { currentFile != nil && fileBody != loadedBody }
 
-    /// Holdnote's recordings, for feeding the stream.
+    /// Holdnote's recordings in the order things happened (the list read from the bottom up),
+    /// for feeding the stream.
     @ObservationIgnored var recordings: () -> [Recording] = { [] }
 
     init() {
@@ -264,7 +265,7 @@ final class ReaderController {
         stream = ReaderStream.state(in: folder, config: config, lenses: lenses)
         additions = ReaderStream.additions(in: folder)
         gaps = lenses.contains { $0.id == Lens.gapsId } ? ReaderStream.gaps(in: folder) : nil
-        unfedCount = ReaderStream.unfed(recordings(), in: folder).count
+        unfedCount = ReaderStream.unfed(recordings(), in: folder, keepOrder: true).count
         refreshPlan()
         refreshNotesCount()
     }
@@ -298,7 +299,7 @@ final class ReaderController {
     func feedTranscripts() -> (recordings: Int, sentences: Int)? {
         guard let folder else { return nil }
         do {
-            let fed = try ReaderStream.feed(recordings(), into: folder)
+            let fed = try ReaderStream.feed(recordings(), into: folder, keepOrder: true)
             if fed.recordings > 0 { addLog("added \(fed.recordings) transcript\(fed.recordings == 1 ? "" : "s") (\(fed.sentences) sentences) to the stream") }
             refreshStream()
             return fed

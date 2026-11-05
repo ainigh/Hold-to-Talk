@@ -4,7 +4,7 @@ import Harness
 import SwiftUI
 
 /// First launch: four things the hotkey needs, each with a button that does it, re-checked
-/// every second while the window is open. Says plainly what is missing instead of failing later.
+/// every second while it shows (in the window's last column). Says plainly what is missing instead of failing later.
 struct SetupView: View {
     let model: AppModel
     @State private var micAllowed = Recorder.isAllowed
@@ -51,7 +51,7 @@ struct SetupView: View {
                      detail: fnFine ? "Set to Do Nothing." : "It's set to \"\(fnUsage.title)\", so macOS would also act on it. In System Settings → Keyboard, set \"Press 🌐 key to\" to Do Nothing. Or pick another key in Settings.") {
                     if !fnFine {
                         Button("Open Keyboard settings") { Permissions.openKeyboardSettings() }
-                        Button("Use another key…") { model.showSettings() }
+                        Button("Use another key…") { model.showSettings(tab: .general) }
                     }
                 }
             } else {
@@ -64,7 +64,7 @@ struct SetupView: View {
                     ProgressView(value: downloading).frame(width: 200)
                 } else if !hasModel {
                     Button("Download model") { download() }
-                    Button("Choose another…") { model.showSettings() }
+                    Button("Choose another…") { model.showSettings(tab: .transcription) }
                 }
                 if let downloadProblem { Text(downloadProblem).font(.caption).foregroundStyle(.orange) }
             }
@@ -80,7 +80,8 @@ struct SetupView: View {
             }
         }
         .padding(24)
-        .frame(width: 520, height: 460, alignment: .top)
+        .frame(maxWidth: 560, maxHeight: 520, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear { refresh(); hasModel = model.library.transcriber.hasModel(model.settings.settings.model) }
         .task {
             while !Task.isCancelled {

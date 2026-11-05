@@ -2,28 +2,48 @@ import AppKit
 import Harness
 import SwiftUI
 
-enum SettingsTab: String, Hashable { case general, audio, transcription, storage, reader }
+/// Settings' pages, listed in the window's second column when Settings is chosen.
+enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
+    case general, audio, transcription, storage, reader
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .audio: "Audio"
+        case .transcription: "Transcription"
+        case .storage: "Storage"
+        case .reader: "Reader"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .general: "gearshape"
+        case .audio: "mic"
+        case .transcription: "text.quote"
+        case .storage: "internaldrive"
+        case .reader: "moon.stars"
+        }
+    }
+}
 
-/// One window, five tabs: General, Audio, Transcription, Storage, Reader.
-struct SettingsView: View {
+/// One settings page, in the window's last column.
+struct SettingsPage: View {
     @Bindable var model: AppModel
+    let tab: SettingsTab
 
     var body: some View {
         @Bindable var store = model.settings
-        TabView(selection: $model.settingsTab) {
-            GeneralSettings(model: model, settings: $store.settings)
-                .tabItem { Label("General", systemImage: "gearshape") }.tag(SettingsTab.general)
-            AudioSettings(settings: $store.settings)
-                .tabItem { Label("Audio", systemImage: "mic") }.tag(SettingsTab.audio)
-            TranscriptionSettings(model: model, settings: $store.settings)
-                .tabItem { Label("Transcription", systemImage: "text.quote") }.tag(SettingsTab.transcription)
-            StorageSettings(model: model, settings: $store.settings)
-                .tabItem { Label("Storage", systemImage: "internaldrive") }.tag(SettingsTab.storage)
-            ReaderSettings(model: model)
-                .tabItem { Label("Reader", systemImage: "moon.stars") }.tag(SettingsTab.reader)
+        Group {
+            switch tab {
+            case .general: GeneralSettings(model: model, settings: $store.settings)
+            case .audio: AudioSettings(settings: $store.settings)
+            case .transcription: TranscriptionSettings(model: model, settings: $store.settings)
+            case .storage: StorageSettings(model: model, settings: $store.settings)
+            case .reader: ReaderSettings(model: model)
+            }
         }
-        .frame(width: 560)
-        .padding(.bottom, 12)
+        .frame(maxWidth: 640)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 
@@ -54,13 +74,24 @@ struct GeneralSettings: View {
                 .disabled(!Updater.canUpdate)
             if let loginProblem { Text(loginProblem).font(.caption).foregroundStyle(.orange) }
             Toggle("Sounds when recording starts and stops", isOn: $settings.sounds)
+            Section("The list") {
+                Picker("Order", selection: Binding(get: { settings.listOrder }, set: { new in
+                    if new == .custom { model.library.adoptOrderIfEmpty() }
+                    settings.listOrder = new
+                })) {
+                    Text("Newest first, by day").tag(Settings.ListOrder.newestFirst)
+                    Text("My own order").tag(Settings.ListOrder.custom)
+                }
+                Text("In your own order, drag recordings and notes up and down to say what came from what; the top is the latest. Copy All, All Text, export and the reader's stream follow it.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section {
                 LabeledContent("Shortcuts") {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Hold the key · record")
                         Text("Tap it twice · record hands-free, tap once to stop")
                         Text("⌥ + hold · add to the selected recording")
-                        Text("⌘⇧H · show or hide the window")
+                        Text("⌘⇧H, or a click on the menu bar icon · show or hide the window")
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -226,8 +257,8 @@ struct StorageSettings: View {
             }
             Section("Export") {
                 HStack {
-                    Button("Export all as one Markdown file…") { model.library.exportMarkdown(model.library.recordings, combined: true) }
-                    Button("One file each…") { model.library.exportMarkdown(model.library.recordings, combined: false) }
+                    Button("Export all as one Markdown file…") { model.library.exportMarkdown(model.library.ordered, combined: true) }
+                    Button("One file each…") { model.library.exportMarkdown(model.library.ordered, combined: false) }
                 }
             }
         }
