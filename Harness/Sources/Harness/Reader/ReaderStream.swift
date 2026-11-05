@@ -54,22 +54,24 @@ public enum ReaderStream {
     }
 
     /// Holdnote's recordings that are final, have text and are not yet in the stream, oldest first.
-    public static func unfed(_ recordings: [Recording], in folder: NotesFolder) -> [Recording] {
+    /// The transcripts not yet in the stream, oldest first; or, with `keepOrder`, in the order
+    /// given (the list's own order, read from the bottom up: what came first goes in first).
+    public static func unfed(_ recordings: [Recording], in folder: NotesFolder, keepOrder: Bool = false) -> [Recording] {
         let fed = sources(in: folder)
-        return recordings.filter { $0.status == .final && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !fed.contains($0.id.uuidString) }
-            .sorted { $0.createdAt < $1.createdAt }
+        let left = recordings.filter { $0.status == .final && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !fed.contains($0.id.uuidString) }
+        return keepOrder ? left : left.sorted { $0.createdAt < $1.createdAt }
     }
 
     /// Adds every unfed transcript to the stream, oldest first, each under a date line so the
     /// reader knows when it was said. Returns how many sentences were added.
     @discardableResult
-    public static func feed(_ recordings: [Recording], into folder: NotesFolder, timeZone: TimeZone = .current) throws -> (recordings: Int, sentences: Int) {
+    public static func feed(_ recordings: [Recording], into folder: NotesFolder, keepOrder: Bool = false, timeZone: TimeZone = .current) throws -> (recordings: Int, sentences: Int) {
         let formatter = DateFormatter()
         formatter.timeZone = timeZone
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
         var n = 0, s = 0
-        for r in unfed(recordings, in: folder) {
+        for r in unfed(recordings, in: folder, keepOrder: keepOrder) {
             let text = "\(formatter.string(from: r.createdAt)). " + r.text.trimmingCharacters(in: .whitespacesAndNewlines)
             let added = try append(text, to: folder, source: r.id.uuidString, now: r.createdAt)
             if !added.isEmpty { n += 1; s += added.count }

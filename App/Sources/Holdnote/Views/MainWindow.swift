@@ -3,87 +3,107 @@ import Harness
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The one window: the sidebar on the left holds the reader's three views (Stream, Night, Notes)
-/// and then the recordings; the right pane shows whichever is chosen, the transcript of the
-/// selected recording by default.
+/// The one window, in columns. The first lists everything Holdnote has (recordings, the reader's
+/// views, settings, setup) with what the menu bar menu used to hold under it; choosing a row opens
+/// the columns it needs: the recordings list, the note files or the settings pages, then the page
+/// itself on the right.
 struct MainWindow: View {
     @Bindable var model: AppModel
+    @AppStorage("listColumnWidth") private var listWidth: Double = 320
 
     private var reader: ReaderController { model.reader }
 
     var body: some View {
         VStack(spacing: 0) {
-            NavigationSplitView {
-                Sidebar(model: model)
-                    .navigationSplitViewColumnWidth(min: 280, ideal: 320)
-            } detail: {
+            HStack(spacing: 0) {
+                MenuColumn(model: model)
+                    .frame(width: 220)
+                Divider()
+                middle
                 detail
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search transcripts")
-            .toolbar {
-                // The same items whatever is showing: a toolbar bridged into an AppKit window
-                // loses items whose identity changes, so only labels, actions and enabling vary.
-                ToolbarItem(placement: .navigation) {
-                    Toggle(isOn: $model.listening) {
-                        Label(model.capture.isListening ? (model.capture.isSpeaking ? "Hearing you…" : "Listening") : "Voice Detection",
-                              systemImage: model.capture.isListening ? "ear.fill" : "ear")
-                    }
-                    .toggleStyle(.button)
-                    .tint(model.capture.isSpeaking ? .red : .accentColor)
-                    .help("Record by itself whenever you speak; each stretch of speech becomes a recording (⌘⇧L). The menu bar icon pulses while it's on.")
-                }
-                ToolbarItemGroup(placement: .primaryAction) {
-                    UpdateStatus(updater: model.updater)
-                    Toggle(isOn: $model.showingAll) { Label("All Text", systemImage: "doc.plaintext") }
-                        .help("Every transcript in the list as one continuous text (⌘⇧A). Select all and copy, or Copy All.")
-                    Button { model.pasteText() } label: { Label("Paste", systemImage: "doc.on.clipboard") }
-                        .help("The clipboard's text as a new note (⌘⇧V)")
-                    Button { model.importAudio() } label: { Label("Import", systemImage: "square.and.arrow.down") }
-                        .help("Audio files (m4a, mp3, wav…) join the list and are transcribed (⌘⇧I). Or drop them on the window.")
-                    Button { model.copyAll() } label: { Label("Copy All", systemImage: "doc.on.doc") }
-                        .help("Copy every transcript in the list, newest first (⌘⇧C)")
-                        .disabled(model.listed.isEmpty)
-                    Button {
-                        if reader.running { reader.stopAfterCall() } else { model.showReader(.night); reader.startNight() }
-                    } label: {
-                        Label(reader.running ? (reader.stopping ? "Stopping…" : "Stop after this call") : reader.startTitle,
-                              systemImage: reader.running ? "stop.circle" : "moon.fill")
-                    }
-                    .disabled(reader.running ? reader.stopping : reader.blocker != nil)
-                    .help(reader.running ? "Finish the call in progress, save progress, then stop. Resume later from the same place."
-                          : (reader.blocker?.text ?? "The reader: read everything unread through every lens, then answer the overnight questions"))
-                    Button { model.showSettings() } label: { Label("Settings", systemImage: "gearshape") }
-                        .help("Settings (⌘,)")
-                }
             }
             Divider()
             UsageBar(monitor: model.monitor, transcribing: model.library.transcribing != nil, listening: model.capture.isListening)
         }
+        .toolbar {
+            // The same items whatever is showing: a toolbar bridged into an AppKit window
+            // loses items whose identity changes, so only labels, actions and enabling vary.
+            ToolbarItem(placement: .navigation) {
+                Toggle(isOn: $model.listening) {
+                    Label(model.capture.isListening ? (model.capture.isSpeaking ? "Hearing you…" : "Listening") : "Voice Detection",
+                          systemImage: model.capture.isListening ? "ear.fill" : "ear")
+                }
+                .toggleStyle(.button)
+                .tint(model.capture.isSpeaking ? .red : .accentColor)
+                .help("Record by itself whenever you speak; each stretch of speech becomes a recording (⌘⇧L). The menu bar icon pulses while it's on.")
+            }
+            ToolbarItemGroup(placement: .primaryAction) {
+                UpdateStatus(updater: model.updater)
+                Toggle(isOn: $model.showingAll) { Label("All Text", systemImage: "doc.plaintext") }
+                    .help("Every transcript in the list as one continuous text (⌘⇧A). Select all and copy, or Copy All.")
+                Button { model.pasteText() } label: { Label("Paste", systemImage: "doc.on.clipboard") }
+                    .help("The clipboard's text as a new note (⌘⇧V)")
+                Button { model.importFiles() } label: { Label("Import", systemImage: "square.and.arrow.down") }
+                    .help("Audio files (m4a, mp3, wav…) are transcribed; text files (.txt, .md) become notes (⌘⇧I). Or drop them on the window.")
+                Button { model.copyAll() } label: { Label("Copy All", systemImage: "doc.on.doc") }
+                    .help("Copy every transcript in the list, in the list's order (⌘⇧C)")
+                    .disabled(model.listed.isEmpty)
+                Button {
+                    if reader.running { reader.stopAfterCall() } else { model.showReader(.night); reader.startNight() }
+                } label: {
+                    Label(reader.running ? (reader.stopping ? "Stopping…" : "Stop after this call") : reader.startTitle,
+                          systemImage: reader.running ? "stop.circle" : "moon.fill")
+                }
+                .disabled(reader.running ? reader.stopping : reader.blocker != nil)
+                .help(reader.running ? "Finish the call in progress, save progress, then stop. Resume later from the same place."
+                      : (reader.blocker?.text ?? "The reader: read everything unread through every lens, then answer the overnight questions"))
+            }
+        }
         .overlay(alignment: .bottom) {
             if !model.library.pendingDeletes.isEmpty {
                 UndoToast(count: model.library.pendingDeletes.count) { model.library.undoDelete() }
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 36)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: model.library.pendingDeletes.count)
-        // Audio files dropped anywhere on the window are imported (the stream's own drop zone, deeper in, keeps text files).
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers in model.importDropped(providers) }
-        .frame(minWidth: 860, minHeight: 520)
+        // Audio and text files (or loose text) dropped anywhere on the window join the list. The
+        // stream's own box, deeper in, keeps the text dropped on it; the list places what lands between its rows.
+        .onDrop(of: [.fileURL, .plainText], isTargeted: nil) { providers in model.takeDrop(providers) }
+        .frame(minWidth: 960, minHeight: 560)
         .onAppear { reader.refreshStream(); reader.refreshFiles() }
         .onChange(of: model.library.recordings.count) { _, _ in reader.libraryChanged() }
-        // Typing in the search field is about the recordings.
-        .onChange(of: model.searchText) { _, new in if !new.isEmpty, model.pane != .recordings { model.pane = .recordings } }
+    }
+
+    /// The second column, for the sections that have a list to choose from.
+    @ViewBuilder
+    private var middle: some View {
+        switch model.section {
+        case .recordings:
+            RecordingList(model: model).frame(width: listWidth)
+            ColumnResizer(width: $listWidth, range: 240...520)
+        case .reader(.notes):
+            NotesFileList(model: model).frame(width: 260)
+            Divider()
+        case .settings:
+            SettingsList(model: model).frame(width: 200)
+            Divider()
+        default:
+            EmptyView()
+        }
     }
 
     @ViewBuilder
     private var detail: some View {
-        switch model.pane {
+        switch model.section {
+        case .recordings: recordings
         case .reader(.stream): ReaderStreamView(model: model, go: { model.showReader($0) })
         case .reader(.night): ReaderNightView(model: model, go: { model.showReader($0) })
-        case .reader(.notes): ReaderNotesView(model: model)
-        case .recordings: recordings
+        case .reader(.notes): NotesEditor(model: model)
+        case .readerGuide: ReaderAboutView()
+        case let .settings(tab): SettingsPage(model: model, tab: tab)
+        case .setup: SetupView(model: model)
         }
     }
 
@@ -127,7 +147,7 @@ struct EmptyState: View {
             Text("Double-tap it to record hands-free; tap once to stop. Or turn on Voice Detection and just talk.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
-            Text("Audio files from elsewhere (an m4a from Voice Memos, say) can be dropped here, or imported with ⌘⇧I.")
+            Text("Audio files (an m4a from Voice Memos, say) and text files can be dropped here, or added with ⌘⇧I.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }

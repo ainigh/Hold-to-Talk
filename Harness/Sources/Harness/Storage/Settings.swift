@@ -46,6 +46,9 @@ public struct Settings: Codable, Equatable, Sendable {
     public var inputDeviceID: String?
     /// Long audio is transcribed in this many parts at once: 0 for automatic, 1 for never.
     public var parallelParts = 0
+    /// How the list is ordered: by date in day sections, or in the order you dragged it into.
+    public enum ListOrder: String, Codable, CaseIterable, Sendable { case newestFirst, custom }
+    public var listOrder: ListOrder = .newestFirst
 
     public init() {}
 
@@ -64,6 +67,7 @@ public struct Settings: Codable, Equatable, Sendable {
         deleteAudioAfterDays = try c.decodeIfPresent(Int.self, forKey: .deleteAudioAfterDays) ?? deleteAudioAfterDays
         inputDeviceID = try c.decodeIfPresent(String.self, forKey: .inputDeviceID)
         parallelParts = try c.decodeIfPresent(Int.self, forKey: .parallelParts) ?? parallelParts
+        listOrder = (try? c.decodeIfPresent(ListOrder.self, forKey: .listOrder)) ?? listOrder
     }
 
     /// Models the app offers, with what to expect of each (sizes from whisper.cpp's downloads).

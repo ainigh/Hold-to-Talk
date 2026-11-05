@@ -2,7 +2,7 @@ import AppKit
 import Harness
 import SwiftUI
 
-/// Every listed transcript as one continuous text, newest first with a date line above each
+/// Every listed transcript as one continuous text, in the list's order with a date line above each
 /// (as Settings → Storage has it): read it in one piece, select all and copy, or Copy All.
 /// What's shown is exactly what Copy All puts on the clipboard.
 struct AllTextView: View {
@@ -16,7 +16,7 @@ struct AllTextView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(model.searchText.isEmpty ? "All recordings" : "Recordings matching “\(model.searchText)”")
                         .font(.system(size: 13, weight: .medium))
-                    Text("\(model.listed.count) transcripts · \(text.split(whereSeparator: \.isWhitespace).count) words · newest first")
+                    Text("\(model.listed.count) transcripts · \(text.split(whereSeparator: \.isWhitespace).count) words · \(model.settings.settings.listOrder == .custom ? "in your order" : "newest first")")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()

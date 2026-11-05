@@ -21,3 +21,28 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(back, s)
     }
 }
+
+final class OrderStoreTests: XCTestCase {
+    func testOrderRoundTripsThroughTheStore() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try RecordingStore(root: root)
+        XCTAssertEqual(store.loadOrder(), [])
+        let ids = [UUID(), UUID(), UUID()]
+        try store.saveOrder(ids)
+        XCTAssertEqual(store.loadOrder(), ids)
+    }
+
+    func testCopyAllCanKeepTheGivenOrder() {
+        let t = Date(timeIntervalSince1970: 1_000_000)
+        let a = Recording(createdAt: t, text: "first", status: .final)
+        let b = Recording(createdAt: t.addingTimeInterval(60), text: "second", status: .final)
+        XCTAssertEqual(TranscriptText.copyAll([a, b], headers: false), "second\n\nfirst")
+        XCTAssertEqual(TranscriptText.copyAll([a, b], headers: false, keepOrder: true), "first\n\nsecond")
+    }
+
+    func testAnUnknownListOrderFallsBackToDate() throws {
+        let s = try JSONDecoder().decode(Settings.self, from: Data(#"{"listOrder":"sideways"}"#.utf8))
+        XCTAssertEqual(s.listOrder, .newestFirst)
+    }
+}

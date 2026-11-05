@@ -25,8 +25,9 @@ public enum TranscriptText {
 
     /// Copy all: every recording's text, newest first, each under a line with its date and time,
     /// separated by a blank line. `headers: false` drops the date lines.
-    public static func copyAll(_ recordings: [Recording], headers: Bool = true, now: Date = Date(), timeZone: TimeZone = .current) -> String {
-        let sorted = recordings.sorted { $0.createdAt > $1.createdAt }
+    public static func copyAll(_ recordings: [Recording], headers: Bool = true, keepOrder: Bool = false, now: Date = Date(), timeZone: TimeZone = .current) -> String {
+        // `keepOrder`: as given (the list's own order), else newest first.
+        let sorted = keepOrder ? recordings : recordings.sorted { $0.createdAt > $1.createdAt }
         let formatter = DateFormatter()
         formatter.timeZone = timeZone
         formatter.locale = Locale(identifier: "en_US_POSIX")

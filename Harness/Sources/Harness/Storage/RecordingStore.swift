@@ -117,6 +117,24 @@ public final class RecordingStore: @unchecked Sendable {
         return files.filter { !known.contains($0.lastPathComponent) && $0.pathExtension == "wav" }
     }
 
+    // MARK: - The list's own order
+
+    private var orderFile: URL { root.appendingPathComponent("order.json") }
+
+    /// The order you put the list in (ids, top first); empty when you never did.
+    public func loadOrder() -> [UUID] {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let data = try? Data(contentsOf: orderFile), let ids = try? Self.decoder.decode([UUID].self, from: data) else { return [] }
+        return ids
+    }
+
+    public func saveOrder(_ ids: [UUID]) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        try Self.encoder.encode(ids).write(to: orderFile, options: .atomic)
+    }
+
     /// Markdown of one recording, for export.
     public static func markdown(_ recording: Recording, timeZone: TimeZone = .current) -> String {
         let formatter = DateFormatter()
