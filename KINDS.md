@@ -38,6 +38,11 @@ This is why a request is predictable: once a text has a Copy button, every text 
 
 A new instance of a kind inherits the row. A new feature goes into the row, and so into every instance.
 
+## Known differences, to close
+
+- Select a passage and right-click to ask about it works on ALL (a read-only text) but not yet in the editable texts (an item, Goals): the editor is SwiftUI's and has no menu of its own. The fix is one editable text view for all three.
+- ALL offers no Reader or Noticed panel and Goals no For you or Noticed: the reader has no single take on the whole or on the goals, and no lens entries about them. A Noticed panel over every finding would give ALL the same data an item gets.
+
 ## The test
 
 Before adding anything, ask: what kind is this, and what does every other instance of that kind do? Add to the kind. If the thing fits no kind, it is either a new kind (rare, and worth naming here) or a sign that an existing kind is drawn wrong.

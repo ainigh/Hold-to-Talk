@@ -41,6 +41,47 @@ enum SidePanel: String, CaseIterable, Identifiable {
     }
 
     static let key = "textSidePanel"
+
+    /// The panel a text shows for the remembered choice: the choice when the text offers it,
+    /// `none` when that was chosen, else the first the text offers.
+    static func shown(for stored: String, offered: [SidePanel]) -> SidePanel {
+        guard let s = SidePanel(rawValue: stored) else { return offered.first ?? .none }
+        return s == .none || offered.contains(s) ? s : (offered.first ?? .none)
+    }
+}
+
+/// The header line every side panel starts with: its name, a meta on the right, a divider.
+struct PanelHeader<Meta: View>: View {
+    let panel: SidePanel
+    @ViewBuilder let meta: () -> Meta
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Label(panel.title, systemImage: panel.symbol).font(.system(size: 13, weight: .semibold))
+                Spacer()
+                meta()
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            Divider()
+        }
+    }
+}
+
+/// Append, as every text you can edit has it: a new paragraph at the end, with the cursor there.
+struct AppendButton: View {
+    @Binding var text: String
+    var editing: FocusState<Bool>.Binding
+
+    var body: some View {
+        Button {
+            if !text.hasSuffix("\n\n") { text = text.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n" }
+            editing.wrappedValue = true
+            // The editor takes focus on the next turn of the run loop; the cursor moves then.
+            DispatchQueue.main.async { NSApp.sendAction(#selector(NSTextView.moveToEndOfDocument(_:)), to: nil, from: nil) }
+        } label: { Label("Append", systemImage: "text.append") }
+        .help("Add a paragraph at the end. Or hold ⌥ with the hotkey to add by voice.")
+    }
 }
 
 /// The chrome every text gets, whatever the text is: a header line (what it is, its measure, the
@@ -56,11 +97,7 @@ struct TextFrame<Header: View, Content: View, Footer: View, Side: View>: View {
     @AppStorage(SidePanel.key) private var stored = SidePanel.reader.rawValue
 
     /// The side panel shown: the remembered one when this text offers it, else the first it does.
-    private var chosen: SidePanel {
-        guard let s = SidePanel(rawValue: stored) else { return offered.first ?? .none }
-        if s == .none || offered.contains(s) { return s }
-        return offered.first ?? .none
-    }
+    private var chosen: SidePanel { SidePanel.shown(for: stored, offered: offered) }
 
     var body: some View {
         GeometryReader { geo in
@@ -110,10 +147,7 @@ struct SideChooser: View {
     let offered: [SidePanel]
     @AppStorage(SidePanel.key) private var stored = SidePanel.reader.rawValue
 
-    private var current: SidePanel {
-        guard let s = SidePanel(rawValue: stored) else { return offered.first ?? .none }
-        return s == .none || offered.contains(s) ? s : (offered.first ?? .none)
-    }
+    private var current: SidePanel { SidePanel.shown(for: stored, offered: offered) }
 
     var body: some View {
         Menu {
@@ -123,7 +157,6 @@ struct SideChooser: View {
                 } label: {
                     if p == current { Label(p.title, systemImage: "checkmark") } else { Text(p.title) }
                 }
-                .help(p.help)
             }
         } label: {
             Label(current == .none ? "Beside: nothing" : "Beside: \(current.title)", systemImage: current.symbol)
@@ -131,27 +164,30 @@ struct SideChooser: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .help("What sits beside the text. The same choice for every text; one that can't offer it shows the first it can.")
+        .help("What sits beside the text: \((offered + [.none]).map { "\($0.title) (\($0.help.prefix(1).lowercased() + $0.help.dropFirst()))" }.joined(separator: "; ")). The same choice for every text; one that can't offer it shows the first it can.")
     }
 }
 
 /// Copy, as every text's footer starts with it: the text to the clipboard, and "Copied" for a moment.
 struct CopyButton: View {
     let text: String
-    var title = "Copy"
-    var help = "Copy the text"
+    /// The shortcut named in the help, e.g. "⌘⇧C".
+    var shortcut = ""
     let copy: (String) -> Void
     @State private var copied = false
+    @State private var generation = 0
 
     var body: some View {
         Button {
             copy(text)
             copied = true
-            Task { try? await Task.sleep(for: .milliseconds(1200)); copied = false }
+            generation += 1
+            let g = generation
+            Task { try? await Task.sleep(for: .milliseconds(1200)); if generation == g { copied = false } }
         } label: {
-            Label(copied ? "Copied" : title, systemImage: copied ? "checkmark" : "doc.on.doc")
+            Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
         }
-        .help(help)
+        .help("Copy the text\(shortcut.isEmpty ? "" : " (\(shortcut))")")
         .disabled(text.isEmpty)
     }
 }
@@ -165,16 +201,12 @@ struct OpenQuestionsPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Label("For you", systemImage: SidePanel.forYou.symbol).font(.system(size: 13, weight: .semibold))
-                Spacer()
+            PanelHeader(panel: .forYou) {
                 Flash(text: flash.text)
                 if let gaps = reader.gaps {
                     Text(gaps.open.isEmpty ? "\(gaps.answered) answered" : "\(gaps.open.count) open").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 10)
-            Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     if let gap = reader.voiceAnswer { VoiceAnswerBanner(model: model, gap: gap) }
@@ -209,15 +241,11 @@ struct StandingQuestionsPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Label("Reader", systemImage: SidePanel.reader.symbol).font(.system(size: 13, weight: .semibold))
-                Spacer()
+            PanelHeader(panel: .reader) {
                 Text(model.reader.goalsState).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
-            .padding(.horizontal, 14).padding(.vertical, 10)
-            Divider()
             ScrollView {
-                KeptQuestions(model: model)
+                KeptQuestions(model: model, heading: false)
                     .padding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }

@@ -33,7 +33,11 @@ struct TranscriptView: View {
         } footer: {
             footer(r)
         } side: { panel in
-            if panel == .words { WordsPanel(model: model, items: [r]) } else { RecordingReaderPanel(model: model, recording: r, focus: panel == .reader ? nil : panel) }
+            switch panel {
+            case .words: WordsPanel(model: model, items: [r])
+            case .ask: AskPanel(model: model, about: r)
+            default: RecordingReaderPanel(model: model, recording: r, focus: panel == .reader ? nil : panel)
+            }
         }
         .onChange(of: live.text) { _, new in
             // A transcript landing from the transcriber (or a merge) replaces what's shown,
@@ -98,7 +102,7 @@ struct TranscriptView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
             }
-            .help(ItemPresentation.origin(of: r) ?? "")
+            .help("One item of the stream\(ItemPresentation.origin(of: r).map { ": \($0)" } ?? ""). The reader reads it with the rest.")
             if isPlayingThis, model.player.duration > 0 {
                 Slider(value: Binding(get: { model.player.time }, set: { model.player.seek(to: $0) }), in: 0...model.player.duration)
                     .frame(width: 160)
@@ -124,14 +128,8 @@ struct TranscriptView: View {
 
     @ViewBuilder
     private func footer(_ r: Recording) -> some View {
-        CopyButton(text: text, help: "Copy the text (⌘C with the list focused, ⌘⌥C anywhere)") { model.library.copy($0) }
-        Button {
-            // A new paragraph at the end, with the cursor there.
-            if !text.hasSuffix("\n\n") { text = text.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n" }
-            editing = true
-            NSApp.sendAction(#selector(NSTextView.moveToEndOfDocument(_:)), to: nil, from: nil)
-        } label: { Label("Append", systemImage: "text.append") }
-        .help("Add a paragraph at the end. Or hold ⌥ with the hotkey to add by voice.")
+        CopyButton(text: text, shortcut: "⌘⌥C") { model.library.copy($0) }
+        AppendButton(text: $text, editing: $editing)
         if r.hasAudio {
             Button { model.library.retranscribe(r.id) } label: { Label("Re-transcribe", systemImage: "arrow.clockwise") }
                 .disabled(r.status == .transcribing)
@@ -154,8 +152,7 @@ struct PlaybackText: View {
             FlowText(segments: recording.segments, time: time, seek: seek)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
-                .frame(maxWidth: 760, alignment: .leading)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

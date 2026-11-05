@@ -19,13 +19,13 @@ struct RecordingReaderPanel: View {
     var body: some View {
         let standing = reader.standing(of: recording)
         let ids: [Int] = { if case let .inStream(ids, _) = standing { return ids }; return [] }()
+        VStack(spacing: 0) {
+        PanelHeader(panel: focus ?? .reader) {
+            Flash(text: flash.text)
+            Text(headerMeta(standing, ids: ids)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+        }
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Label((focus ?? .reader).title, systemImage: (focus ?? .reader).symbol).font(.system(size: 13, weight: .semibold))
-                    Spacer()
-                    Flash(text: flash.text)
-                }
                 if focus == nil || ids.isEmpty { status(standing, ids: ids) }
                 if !ids.isEmpty {
                     let gaps = reader.gapsAbout(ids)
@@ -41,12 +41,12 @@ struct RecordingReaderPanel: View {
                         }
                     }
                     if focus == nil || focus == .noticed { findings(ids) }
-                    if focus == nil || focus == .ask { askSection }
+                    if focus == nil { askSection }
                 }
-
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
         }
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
         .onAppear { takeDraft() }
@@ -58,6 +58,15 @@ struct RecordingReaderPanel: View {
         guard model.askDraftTarget == recording.id else { return }
         if !model.askDraft.isEmpty { question = model.askDraft; model.askDraft = "" }
         asking = true
+    }
+
+    /// The header's meta: where the item stands with the reader, in a few words.
+    private func headerMeta(_ standing: ReaderStream.Standing, ids: [Int]) -> String {
+        switch standing {
+        case .notReady: return "not transcribed yet"
+        case .waiting: return "not in the stream yet"
+        case .inStream: let s = readState(ids); return s.now ? "being read" : s.read ? "read" : "not read yet"
+        }
     }
 
     // MARK: - Where it stands

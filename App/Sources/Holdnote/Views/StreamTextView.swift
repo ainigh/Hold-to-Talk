@@ -21,6 +21,7 @@ struct StreamTextView: View {
                     .font(.system(size: 13, weight: .medium))
                 Text(meta(text)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
+            .help("Every item in the list in its order, with a date line above each: exactly what the reader reads.")
         } content: {
             if model.listed.isEmpty {
                 Text(model.searchText.isEmpty ? "Nothing in the stream yet." : "Nothing matches.")
@@ -29,7 +30,7 @@ struct StreamTextView: View {
                 SelectableText(text: text) { passage in model.askAbout(passage) }
             }
         } footer: {
-            CopyButton(text: text, title: "Copy All", help: "Copy everything shown (⌘⇧C)") { model.library.copy($0) }
+            CopyButton(text: text, shortcut: "⌘⇧C") { model.library.copy($0) }
             if reader.unfedCount > 0, reader.folder != nil, model.searchText.isEmpty {
                 Button { _ = reader.feedTranscripts() } label: { Label("Add \(reader.unfedCount) to the reader now", systemImage: "eyeglasses") }
                     .help("Items join the reader's stream by themselves a minute after they settle; this adds them at once")
@@ -82,7 +83,7 @@ struct SelectableText: NSViewRepresentable {
         view.drawsBackground = false
         view.isRichText = false
         view.usesFindBar = true
-        view.textContainerInset = NSSize(width: 20, height: 16)
+        view.textContainerInset = NSSize(width: 20, height: 12)
         view.font = NSFont.systemFont(ofSize: 16)
         view.textColor = .labelColor
         let style = NSMutableParagraphStyle()

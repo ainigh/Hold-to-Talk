@@ -128,7 +128,7 @@ struct GoalsView: View {
                 }
                 .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
-            .help("Every lens reads this with every chunk, and the reader writes questions from it that it keeps answered as you add more.")
+            .help("Your goals: what you are trying to find out. Every lens reads this with every chunk.")
         } content: {
             TextEditor(text: $reader.goals)
                 .font(.system(size: 16))
@@ -145,12 +145,8 @@ struct GoalsView: View {
                     }
                 }
         } footer: {
-            CopyButton(text: goals, help: "Copy the goals") { model.library.copy($0) }
-            Button {
-                editing = true
-                NSApp.sendAction(#selector(NSTextView.moveToEndOfDocument(_:)), to: nil, from: nil)
-            } label: { Label("Append", systemImage: "text.append") }
-            .help("Add to the goals at the end")
+            CopyButton(text: goals) { model.library.copy($0) }
+            AppendButton(text: $reader.goals, editing: $editing)
             Spacer()
         } side: { panel in
             switch panel {
@@ -217,11 +213,9 @@ struct AskPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Label(about == nil ? "Ask about everything" : "Ask about this item", systemImage: "bubble.left.and.text.bubble.right")
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer()
+            PanelHeader(panel: .ask) {
                 Flash(text: flash.text)
+                Text(about == nil ? "about everything" : "about this item").font(.system(size: 11)).foregroundStyle(.secondary)
                 if !turns.isEmpty, about == nil {
                     Button {
                         confirm("Clear this conversation?", detail: "Flags already written to corrections.md are kept.", button: "Clear") { reader.clearChat() }
@@ -230,8 +224,6 @@ struct AskPanel: View {
                     .help("Clear the conversation")
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 10)
-            Divider()
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
@@ -372,12 +364,22 @@ struct ReaderStatusStrip: View {
 /// is refreshed as the stream grows.
 struct KeptQuestions: View {
     let model: AppModel
+    /// With its own title and lede (on a page), or bare (inside a side panel that has a header).
+    var heading = true
     @State private var open: Set<String> = []
 
     private var reader: ReaderController { model.reader }
 
     var body: some View {
-        ReaderBlock(title: "Questions about your goals", lede: "Written from your goals (and any you pin from the conversation), answered from the notes with your words cited, and answered again once you have said more.") {
+        if heading {
+            ReaderBlock(title: "Questions about your goals", lede: "Written from your goals (and any you pin from the conversation), answered from the notes with your words cited, and answered again once you have said more.") { list }
+        } else {
+            VStack(alignment: .leading, spacing: 8) { list }
+        }
+    }
+
+    @ViewBuilder
+    private var list: some View {
             HStack(spacing: 10) {
                 Text(summary).font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
@@ -396,7 +398,6 @@ struct KeptQuestions: View {
             ForEach(reader.questions, id: \.self) { q in
                 questionRow(q)
             }
-        }
     }
 
     private var summary: String {
