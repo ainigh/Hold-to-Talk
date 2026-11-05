@@ -1,7 +1,7 @@
 import Harness
 import SwiftUI
 
-/// The words that carry the meaning of an item, or of the whole stream: every noun, verb,
+/// The words that carry the meaning of an item, or of the whole stream: every name, noun, verb,
 /// adjective and adverb (the closed classes left out), counted by lemma, most frequent first.
 /// Pick a kind to see only those; click a word to search the stream for it.
 struct WordsPanel: View {

@@ -39,13 +39,17 @@ public enum Reading {
 
     static let marker = "==="
 
+    /// Said to the model before any text of the stream, whatever made it: the stream is treated
+    /// as a transcript throughout, so a mis-heard word is read for what was meant, not as a fact.
+    public static let transcriptNote = "The stream was spoken and transcribed by a machine, and some of it was typed; read all of it the same way: expect a few mis-heard words, names spelled as they sound, missing punctuation and run-on sentences. Read for what was meant; when a mis-heard word matters to the answer, say so and give the likely word."
+
     /// The model writes plain lines, not JSON: under one `=== <lens id> ===` header per lens, one
     /// entry per line starting with the ids in brackets, and (for lenses that carry one) a NOTEBOOK.
     public static func systemPrompt(lenses group: [Lens], goals: String) -> String {
         let id42 = Sentences.makeId(42), id43 = Sentences.makeId(43), id47 = Sentences.makeId(47)
         let carry = group.contains(where: \.carry)
         let first = group.first?.id ?? "lens"
-        var s = "You are reading the author's own stream of thoughts, in order, a small chunk at a time. The stream is far larger than what you can see; you only have this chunk\(carry ? " and the notebooks kept between chunks" : ""). Sentences are numbered; every entry you write must cite the sentence ids it comes from, exactly as written (e.g. \(id42)). Never invent ids.\n"
+        var s = "You are reading the author's own stream of thoughts, in order, a small chunk at a time. The stream is far larger than what you can see; you only have this chunk\(carry ? " and the notebooks kept between chunks" : ""). Sentences are numbered; every entry you write must cite the sentence ids it comes from, exactly as written (e.g. \(id42)). Never invent ids.\n\(transcriptNote)\n"
         if group.contains(where: { !$0.ignoreGoals }) {
             let g = goals.trimmingCharacters(in: .whitespacesAndNewlines)
             s += "\nThe author's goals:\n\(g.isEmpty ? "(none written)" : g)\n"
@@ -454,7 +458,7 @@ public enum Reading {
             let text = lens.carry && !st.notebook.isEmpty ? st.notebook : st.entries.suffix(60).map { "- [\($0.ids.joined(separator: ", "))] \($0.text)" }.joined(separator: "\n")
             return "## \(lens.title)\n\(tokens.clip(text, perFile).text)"
         }
-        let system = "The author keeps a long stream of their own thoughts and asked for help thinking about it. Their goals are below, followed by extracts from notes taken on the stream. Write \(config.questionCount) questions the author would most want answered about their own text, in the author's interest, grounded in what the notes show is actually there. Favour: what is present, what is associated with what, how feelings about something developed, where the author contradicts themselves, what was left open, and what the notes suggest the author has not noticed. Do not ask for counts or arithmetic. Each question should be answerable from the stream. Write one question per line and nothing else: no numbering, no headings, no preamble."
+        let system = "The author keeps a long stream of their own thoughts and asked for help thinking about it. \(transcriptNote) Their goals are below, followed by extracts from notes taken on the stream. Write \(config.questionCount) questions the author would most want answered about their own text, in the author's interest, grounded in what the notes show is actually there. Favour: what is present, what is associated with what, how feelings about something developed, where the author contradicts themselves, what was left open, and what the notes suggest the author has not noticed. Do not ask for counts or arithmetic. Each question should be answerable from the stream. Write one question per line and nothing else: no numbering, no headings, no preamble."
         let user = tokens.clip("## Goals\n\(goals.isEmpty ? "(none written; ask what a thoughtful reader of these notes would)" : goals)\n\n\(heads.joined(separator: "\n\n"))", config.windowTokens - tokens.estimate(system) - 60).text
         ctl.onCall("Questions about your goals", system, user)
         var qs: [String] = []

@@ -76,6 +76,10 @@ final class ReaderTests: XCTestCase {
         if case let .answer(text, ev, _, implied) = LensParse.action("You seem unsure (s00005).") {
             XCTAssertEqual(text, "You seem unsure (s00005)."); XCTAssertEqual(ev, ["s00005"]); XCTAssertTrue(implied)
         } else { XCTFail() }
+        if case let .find(word, offset, why) = LensParse.action("FIND the move offset 12\nWHY: where it starts") {
+            XCTAssertEqual(word, "the move"); XCTAssertEqual(offset, 12); XCTAssertEqual(why, "where it starts")
+        } else { XCTFail() }
+        if case let .find(word, offset, _) = LensParse.action("Find: “Lisbon”") { XCTAssertEqual(word, "Lisbon"); XCTAssertEqual(offset, 0) } else { XCTFail() }
         if case .none = LensParse.action("  \n") {} else { XCTFail() }
         // "opened" is not OPEN.
         if case .answer = LensParse.action("opened the file") {} else { XCTFail() }
@@ -371,6 +375,16 @@ final class ReaderTests: XCTestCase {
         t.calibrate(chars: 1000, actualTokens: 500, estimatedTokens: 280)
         XCTAssertLessThan(t.charsPerToken, 3.6)
         XCTAssertEqual(Asking.page(of: "a\nb\nc", offset: 1, budget: 1, tokens: t), "b\n[lines 1–1 of 3; to continue, OPEN the same file with offset 2]")
+        let s = [Sentence(id: "s00001", text: "The plan was clear."), Sentence(id: "s00002", text: "An airplane overhead."), Sentence(id: "s00003", text: "Plans change, planning doesn't.")]
+        let found = Asking.find("plan", in: s, offset: 0, budget: 1000, tokens: t)
+        XCTAssertEqual(found.ids, ["s00001", "s00003"])
+        XCTAssertTrue(found.text.hasPrefix("s00001\tThe plan was clear.\ns00003\tPlans change"))
+        XCTAssertTrue(found.text.hasSuffix("that is all of them]"))
+        XCTAssertEqual(Asking.find("plan", in: s, offset: 1, budget: 1000, tokens: t).ids, ["s00003"])
+        XCTAssertTrue(Asking.find("zebra", in: s, offset: 0, budget: 1000, tokens: t).text.hasPrefix("No sentence contains"))
+        XCTAssertEqual(Asking.find("Plan.", in: s, offset: 0, budget: 1000, tokens: t).ids, ["s00001", "s00003"])
+        XCTAssertTrue(Asking.find("plan", in: s, offset: 2, budget: 1000, tokens: t).text.hasPrefix("No more matches"))
+        XCTAssertEqual(Asking.find("plans  change", in: s, offset: 0, budget: 1000, tokens: t).ids, ["s00003"])
     }
 }
 

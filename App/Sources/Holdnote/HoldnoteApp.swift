@@ -210,6 +210,13 @@ final class AppModel {
         // Whisper and the model share the Mac: reading waits while you record or transcribe.
         reader.isBusy = { [capture, library] in capture.isRecording || library.transcribing != nil }
         reader.isWindowKey = { [weak self] in self?.window?.isKeyWindow ?? false }
+        // The forty words the stream uses most, for the asking prompt: context, and things worth a FIND.
+        reader.wordsSummary = { [words, library] in
+            let inv = words.inventory(of: library.ordered)
+            var lines = inv.entries.prefix(40).map { "\($0.commonForm) · \($0.kind.single) · \($0.count)" }
+            if inv.pending > 0 { lines.append("(\(inv.pending) item\(inv.pending == 1 ? "" : "s") still being counted; the list is partial)") }
+            return lines.joined(separator: "\n")
+        }
         // A spoken answer to one of the reader's questions: the next recording, once transcribed.
         library.onFinal = { [weak self] r in
             guard let self, self.reader.voiceAnswer != nil else { return }
@@ -232,6 +239,8 @@ final class AppModel {
         }
         statusBar = StatusBarController(model: self)
         library.load()
+        // The words are counted ahead of the first question.
+        _ = words.inventory(of: library.ordered)
         Notifier.shared.start(onInstall: { [weak self] in self?.updater.confirmInstall() },
                               onOpen: { [weak self] v in if v == "stream" { self?.showWholeStream() } else { self?.showReader(ReaderView(rawValue: v)) } })
         updater.start()
