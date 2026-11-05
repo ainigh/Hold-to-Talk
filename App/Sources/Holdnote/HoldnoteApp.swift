@@ -158,8 +158,8 @@ final class AppModel {
     var section: Section = .recordings {
         didSet {
             // Reading and Setup are pages of Status now; the old sections route there.
-            if section == .reader(.reading) { statusTab = .reading; section = .reader(.status); return }
-            if section == .setup { statusTab = .setup; section = .reader(.status); return }
+            if section == .reader(.reading) { statusTab = .reading; section = .reader(.status); readerView = .status; return }
+            if section == .setup { statusTab = .setup; section = .reader(.status); readerView = .status; return }
             if case let .reader(v) = section { readerView = v }
             if case let .settings(t) = section { settingsTab = t }
         }
@@ -434,8 +434,9 @@ final class AppModel {
         show(.setup)
     }
 
-    /// Setup is done (or put off): back to the stream.
+    /// Setup is done (or put off): back to the stream; Status opens on Now next time.
     func closeSetup() {
+        statusTab = .now
         section = .recordings
     }
 
@@ -470,6 +471,7 @@ final class AppModel {
     func deleteSelected() {
         guard !selection.isEmpty else { return }
         if let playing = player.playing, selection.contains(playing) { player.stop() }
+        for id in selection { words.forget(id) }
         library.delete(selection)
         selection = []
     }

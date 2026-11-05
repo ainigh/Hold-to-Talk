@@ -60,29 +60,31 @@ struct WordsPanel: View {
     private func row(_ e: WordInventory.Entry, in all: [WordInventory.Entry]) -> some View {
         let most = all.first?.count ?? 1
         return Button {
-            model.searchText = e.lemma
+            // The form written most often, so the search finds it ("went", not "go").
+            model.searchText = e.commonForm
             model.show(.recordings)
         } label: {
             HStack(spacing: 8) {
                 Text(e.lemma).font(.system(size: 12)).lineLimit(1)
                 Spacer(minLength: 4)
-                if kind == nil { Text(e.kind.title.lowercased().dropLast()).font(.system(size: 10)).foregroundStyle(.tertiary) }
+                if kind == nil { Text(e.kind.single).font(.system(size: 10)).foregroundStyle(.tertiary) }
                 Text("\(e.count)").font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
                     .frame(width: 34, alignment: .trailing)
             }
             .padding(.horizontal, 6).padding(.vertical, 3)
+            .frame(minHeight: 20)
             .background(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 4).fill(Color.accentColor.opacity(0.12))
+                RoundedRectangle(cornerRadius: 4).fill(Color.accentColor.opacity(0.18))
                     .frame(width: max(2, 60 * CGFloat(e.count) / CGFloat(most)))
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("\(e.lemma): \(e.count) time\(e.count == 1 ? "" : "s") as \(kinds(e)), in \(e.items.count) item\(e.items.count == 1 ? "" : "s"). Click to search the stream for it.")
+        .help("\(e.lemma): \(e.count) time\(e.count == 1 ? "" : "s") as \(kinds(e)), in \(e.items.count) item\(e.items.count == 1 ? "" : "s")\(e.forms.count > 1 ? ", written as \(e.forms.keys.sorted().joined(separator: ", "))" : ""). Click to search the stream for “\(e.commonForm)”.")
     }
 
     private func kinds(_ e: WordInventory.Entry) -> String {
-        e.kinds.sorted { $0.value > $1.value }.map { "\($0.key.title.lowercased()) \($0.value)" }.joined(separator: ", ")
+        e.kinds.sorted { $0.value > $1.value }.map { "\($0.key.single) \($0.value)" }.joined(separator: ", ")
     }
 
     private func summary(_ entries: [WordInventory.Entry], pending: Int) -> String {

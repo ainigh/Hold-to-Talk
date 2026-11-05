@@ -29,6 +29,15 @@ public enum WordInventory {
             case .other: "Other"
             }
         }
+        public var single: String {
+            switch self {
+            case .noun: "noun"
+            case .verb: "verb"
+            case .adjective: "adjective"
+            case .adverb: "adverb"
+            case .other: "other"
+            }
+        }
     }
 
     /// One word of the inventory: how often, as what, and in which items.
@@ -39,7 +48,12 @@ public enum WordInventory {
         public var kinds: [Kind: Int]
         /// The items it appears in (whatever ids the caller passed), with its count in each.
         public var items: [String: Int]
+        /// The forms it was written as ("went", "going" under "go"), with their counts, so a
+        /// search for the word can use what is actually in the text.
+        public var forms: [String: Int] = [:]
         public var id: String { lemma }
+        /// The form written most often.
+        public var commonForm: String { forms.max { $0.value < $1.value || ($0.value == $1.value && $0.key > $1.key) }?.key ?? lemma }
         public var kind: Kind { kinds.max { $0.value < $1.value || ($0.value == $1.value && $0.key > $1.key) }?.key ?? .other }
     }
 
@@ -53,6 +67,7 @@ public enum WordInventory {
             e.count += 1
             e.kinds[w.kind, default: 0] += 1
             e.items[item, default: 0] += 1
+            e.forms[w.surface.lowercased(), default: 0] += 1
             by[key] = e
         }
         return sorted(Array(by.values))
@@ -67,6 +82,7 @@ public enum WordInventory {
                 t.count += e.count
                 for (k, n) in e.kinds { t.kinds[k, default: 0] += n }
                 for (i, n) in e.items { t.items[i, default: 0] += n }
+                for (f, n) in e.forms { t.forms[f, default: 0] += n }
                 by[e.lemma] = t
             }
         }

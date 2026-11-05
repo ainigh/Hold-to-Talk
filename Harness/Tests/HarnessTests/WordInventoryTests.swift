@@ -19,6 +19,8 @@ final class WordInventoryTests: XCTestCase {
         XCTAssertEqual(inv[0].count, 3)
         XCTAssertEqual(inv[0].kind, .verb)
         XCTAssertEqual(inv[0].items, ["a": 3])
+        XCTAssertEqual(inv[0].forms, ["move": 1, "moving": 1, "moved": 1])
+        XCTAssertEqual(inv[0].commonForm, "move")
     }
 
     func testAggregateAddsItemsUp() {
