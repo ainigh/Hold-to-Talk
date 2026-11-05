@@ -22,8 +22,12 @@ final class VectorStoreTests: XCTestCase {
         try again.append([(4, [0, 0, 1])], to: f)
         XCTAssertEqual(VectorStore.load(from: f, model: "test")?.count, 4)
         XCTAssertEqual(again.missing(in: [Sentence(id: "s00004", text: ""), Sentence(id: "s00005", text: "")]), [5])
-        // Another model's store is not reused.
+        // Another model's store is not reused, and appending for another model replaces the file.
         XCTAssertNil(VectorStore.load(from: f, model: "other"))
+        var other = VectorStore(model: "other", dim: 2)
+        try other.append([(1, [1, 1])], to: f)
+        XCTAssertEqual(VectorStore.load(from: f, model: "other")?.count, 1)
+        XCTAssertNil(VectorStore.load(from: f, model: "test"))
         // A wrong dimension is refused.
         XCTAssertThrowsError(try again.append([(6, [1, 2])], to: f))
     }

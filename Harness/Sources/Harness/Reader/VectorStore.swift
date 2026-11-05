@@ -54,14 +54,16 @@ public struct VectorStore: Sendable {
         if let i = index[n] { vectors.replaceSubrange(i * dim..<(i + 1) * dim, with: v) } else { index[n] = vectors.count / dim; vectors += v }
     }
 
-    /// Adds vectors (normalised here) to memory and to the file; the meta file is written when
-    /// the store is new.
+    /// Adds vectors (normalised here) to memory and to the file. A file made by another model
+    /// (or of another dimension) is replaced, with the meta file, so a store never mixes models.
     public mutating func append(_ records: [(n: Int, vector: [Float])], to folder: NotesFolder) throws {
         guard let u = folder.url(Self.file) else { throw ReaderError("No place for \(Self.file)") }
         var data = Data()
-        if !FileManager.default.fileExists(atPath: u.path) {
+        let mine = Meta(model: model, dim: dim)
+        let fresh = !FileManager.default.fileExists(atPath: u.path) || folder.readJSON(Self.meta, as: Meta.self) != mine
+        if fresh {
             data.append(contentsOf: Self.magic)
-            try folder.writeJSON(Self.meta, Meta(model: model, dim: dim))
+            try folder.writeJSON(Self.meta, mine)
         }
         for r in records {
             guard r.vector.count == dim else { throw ReaderError("A vector of \(r.vector.count) floats for a store of \(dim)") }
@@ -71,7 +73,7 @@ public struct VectorStore: Sendable {
             data.append(Data(bytes: &n, count: 4))
             v.withUnsafeBufferPointer { data.append(Data(buffer: $0)) }
         }
-        if let handle = try? FileHandle(forWritingTo: u) {
+        if !fresh, let handle = try? FileHandle(forWritingTo: u) {
             defer { try? handle.close() }
             try handle.seekToEnd()
             try handle.write(contentsOf: data)

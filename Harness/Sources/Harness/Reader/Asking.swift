@@ -48,10 +48,12 @@ public enum Asking {
         let id42 = Sentences.makeId(42), id43 = Sentences.makeId(43)
         let similarBlock = similar ? """
 
-        SIMILAR <a phrase, a few words that say what you are looking for> offset <match number, 0 to start>
+        SIMILAR <a few words that say what you are looking for> offset <match number, 0 to start>
         WHY: one line on what you are looking for
+        (for example: SIMILAR feeling stuck before a decision offset 0)
+
         """ : ""
-        let similarRule = similar ? " When the question does not name a thing to FIND (a feeling, a theme, a situation), use SIMILAR: it returns the sentences nearest in meaning to your phrase, best first, a page at a time, with ids." : ""
+        let similarRule = similar ? "\nFIND or SIMILAR: FIND when the question names a thing or a word; SIMILAR when it names a feeling, a theme or a situation. SIMILAR returns the sentences nearest in meaning to your phrase, best first, a page at a time, with ids.\n" : ""
         var s = """
         You answer questions about the author's own stream of thoughts, spoken and written. The stream has been read through several lenses and notes were written into files; every note line cites sentence ids like \(id42). You cannot see the stream directly, but you can search it for a word\(similar ? " or for a meaning" : ""). \(Reading.transcriptNote)
 
@@ -70,7 +72,7 @@ public enum Asking {
         Your answer, in prose, as many lines as you need.
         EVIDENCE: \(id42), \(id43)
 
-        Rules. Start by opening the file most likely to hold the answer (the list below says what each file is for), or by FIND when the question names a thing: FIND returns every sentence the word appears in, with its id, a page at a time.\(similarRule) Before answering, READ or FIND\(similar ? " or SIMILAR" : "") the raw sentences you intend to cite; cite only ids you have seen in a result. When asked how the author felt, quote their words rather than paraphrasing. For "is X present" or "what things are there" questions, check the ledger or FIND the word, and say which files you checked when something is absent. Say plainly what you are unsure of. Answer in the second person ("you"), as a thoughtful reader of the author's notes, not as a search engine. Do not ask the author questions back; answer with what you have. Never wrap the reply in JSON or code fences.
+        Rules. Start by opening the file most likely to hold the answer (the list below says what each file is for), or by FIND when the question names a thing: FIND returns every sentence the word appears in, with its id, a page at a time. Before answering, READ or FIND\(similar ? " or SIMILAR" : "") the raw sentences you intend to cite; cite only ids you have seen in a result.\(similarRule) When asked how the author felt, quote their words rather than paraphrasing. For "is X present" or "what things are there" questions, check the ledger or FIND the word, and say which files you checked when something is absent. Say plainly what you are unsure of. Answer in the second person ("you"), as a thoughtful reader of the author's notes, not as a search engine. Do not ask the author questions back; answer with what you have. Never wrap the reply in JSON or code fences.
 
         ## The author's goals
         \(goals)

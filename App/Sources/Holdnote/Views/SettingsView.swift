@@ -292,6 +292,7 @@ struct StorageSettings: View {
 struct ReaderSettings: View {
     let model: AppModel
     @State private var base = ""
+    @State private var embedModel = ""
     @State private var moreBudgets = false
 
     private var reader: ReaderController { model.reader }
@@ -352,9 +353,13 @@ struct ReaderSettings: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Finding by meaning") {
-                TextField("Embedding model", text: $reader.config.embedModel)
-                Text(reader.indexer.line).font(.caption).foregroundStyle(reader.indexer.available ? Color.secondary : Color.orange)
-                Text("An Ollama embedding model (ollama pull nomic-embed-text, about 270 MB). Every sentence is embedded once as it joins the stream, into vectors.bin in the notes folder, and the model answering questions gets a SIMILAR move: the sentences nearest in meaning to a phrase, a page at a time. Empty turns it off; nothing else changes.")
+                HStack {
+                    TextField("Embedding model", text: $embedModel)
+                        .onSubmit { applyEmbed() }
+                    Button("Apply") { applyEmbed() }.disabled(embedModel.trimmingCharacters(in: .whitespaces) == reader.config.embedModel)
+                }
+                Text(reader.indexer.line).font(.caption).foregroundStyle(reader.indexer.isUnavailable ? Color.orange : Color.secondary)
+                Text("An Ollama embedding model (ollama pull \(ReaderConfig().embedModel), about 270 MB). Every sentence is embedded once as it joins the stream, into vectors.bin in the notes folder, and the model answering questions gets a SIMILAR move: the sentences nearest in meaning to a phrase, a page at a time. Empty turns it off; nothing else changes. Another model means a fresh index.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("The notes") {
@@ -371,7 +376,13 @@ struct ReaderSettings: View {
         }
         .formStyle(.grouped)
         .padding(.top, 8)
-        .onAppear { base = reader.config.base }
+        .onAppear { base = reader.config.base; embedModel = reader.config.embedModel }
+    }
+
+    private func applyEmbed() {
+        let m = embedModel.trimmingCharacters(in: .whitespaces)
+        embedModel = m
+        if m != reader.config.embedModel { reader.config.embedModel = m }
     }
 
     private var ollamaDetail: String {

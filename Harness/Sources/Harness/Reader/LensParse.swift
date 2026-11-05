@@ -186,7 +186,7 @@ public enum LensParse {
                     if lw.hasPrefix("@"), let n = Int(lw.dropFirst()) { offset = n; k += 1; continue }
                     term.append(words[k]); k += 1
                 }
-                let word = term.joined(separator: " ").trimmingCharacters(in: CharacterSet(charactersIn: "\"'`,“”‘’"))
+                let word = term.joined(separator: " ").trimmingCharacters(in: CharacterSet(charactersIn: "\"'`,“”‘’<>"))
                 return kind == "find" ? .find(word: word, offset: offset, why: why) : .similar(phrase: word, offset: offset, why: why)
             default:
                 var body: [String] = []

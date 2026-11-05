@@ -75,13 +75,24 @@ struct OllamaClient: ChatModel {
 
     /// Vectors for `texts` from an embedding model (Ollama's /api/embed), one per text.
     func embed(model: String, texts: [String]) async throws -> [[Float]] {
-        let (data, response) = try await Self.session.data(for: post("/api/embed", ["model": model, "input": texts, "keep_alive": "30m"], timeout: 120))
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw Self.httpError((response as? HTTPURLResponse)?.statusCode ?? 0, data)
+        var attempt = 0
+        while true {
+            do {
+                let (data, response) = try await Self.session.data(for: post("/api/embed", ["model": model, "input": texts, "keep_alive": "30m"], timeout: 120))
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                    throw Self.httpError((response as? HTTPURLResponse)?.statusCode ?? 0, data)
+                }
+                let d = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+                let rows = d["embeddings"] as? [[NSNumber]] ?? []
+                return rows.map { $0.map { $0.floatValue } }
+            } catch {
+                if Task.isCancelled || (error as? URLError)?.code == .cancelled || error is CancellationError { throw ReaderError.cancelled }
+                if let e = error as? ReaderError, e.cancelled || e.fatal { throw e }
+                attempt += 1
+                if attempt >= 3 { throw error as? ReaderError ?? ReaderError(error.localizedDescription) }
+                try await Task.sleep(nanoseconds: UInt64(1.5 * Double(attempt) * 1e9))
+            }
         }
-        let d = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-        let rows = d["embeddings"] as? [[NSNumber]] ?? []
-        return rows.map { $0.map { $0.floatValue } }
     }
 
     private static func httpError(_ status: Int, _ body: Data) -> ReaderError {

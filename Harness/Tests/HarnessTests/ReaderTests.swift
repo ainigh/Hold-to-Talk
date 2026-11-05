@@ -391,7 +391,7 @@ final class ReaderTests: XCTestCase {
         XCTAssertEqual(page.ids, ["s00003", "s00001"])
         XCTAssertTrue(page.text.hasPrefix("s00003\tPlans change, planning doesn't.\t(0.81)"))
         XCTAssertTrue(Asking.similarPage("doubt", hits: [], sentences: byId, offset: 0, budget: 1000, tokens: t).text.hasPrefix("Nothing in the stream"))
-        XCTAssertTrue(Asking.system(goals: "", toc: "", corrections: "", similar: true).contains("SIMILAR <a phrase"))
+        XCTAssertTrue(Asking.system(goals: "", toc: "", corrections: "", similar: true).contains("SIMILAR <a few words"))
         XCTAssertFalse(Asking.system(goals: "", toc: "", corrections: "", similar: false).contains("SIMILAR"))
     }
 }

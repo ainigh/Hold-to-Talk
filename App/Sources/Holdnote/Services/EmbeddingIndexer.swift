@@ -19,6 +19,12 @@ final class EmbeddingIndexer {
     @ObservationIgnored private var folderPath = ""
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var queued: (folder: NotesFolder, sentences: [Sentence], base: String, model: String)?
+    /// Bumped by `reset()` and by a model or folder change; a drain from an earlier generation
+    /// stops writing as soon as it notices.
+    @ObservationIgnored private var generation = 0
+    static let batch = 32
+    /// How many nearest sentences a SIMILAR ranks; the page budget then cuts the page.
+    static let top = 60
 
     /// SIMILAR can be offered: the model answered and there is a store with something in it.
     var available: Bool {
@@ -41,56 +47,70 @@ final class EmbeddingIndexer {
     /// store for this folder and model, then embeds what is missing in the background.
     func schedule(folder: NotesFolder, sentences: [Sentence], base: String, model: String) {
         total = sentences.count
-        guard !model.isEmpty else { state = .off; store = nil; task?.cancel(); task = nil; return }
-        if folder.root.path != folderPath || store?.model != model {
+        guard !model.isEmpty else { reset(); state = .off; return }
+        if folder.root.path != folderPath || storeModel != model {
+            generation += 1
+            task?.cancel(); task = nil
             folderPath = folder.root.path
+            storeModel = model
             store = VectorStore.load(from: folder, model: model)
             indexed = store?.count ?? 0
+            state = .checking
         }
         queued = (folder, sentences, base, model)
         guard task == nil else { return }
+        let mine = generation
         task = Task { [weak self] in
-            await self?.drain()
-            self?.task = nil
+            await self?.drain(generation: mine)
+            if let self, self.generation == mine { self.task = nil }
         }
     }
 
-    private func drain() async {
-        while let job = queued {
+    /// The model the store (or the attempt at one) is for, kept apart from `store`, which is
+    /// nil until the model has answered.
+    @ObservationIgnored private var storeModel = ""
+
+    private func drain(generation mine: Int) async {
+        func stale() -> Bool { Task.isCancelled || generation != mine }
+        func fail(_ error: Error) {
+            guard !stale() else { return }
+            if (error as? ReaderError)?.cancelled == true || error is CancellationError { return }
+            state = .unavailable((error as? ReaderError)?.message ?? error.localizedDescription)
+        }
+        while let job = queued, !stale() {
             queued = nil
-            if state == .off || state == .checking || { if case .unavailable = state { return true }; return false }() { state = .checking }
             let client = OllamaClient(base: job.base)
             // The model is proven once per folder-and-model by embedding one word.
-            if store == nil || !(state == .idle || state == .indexing) {
+            if store == nil {
+                state = .checking
                 do {
                     let probe = try await client.embed(model: job.model, texts: ["hello"])
+                    guard !stale() else { return }
                     guard let dim = probe.first?.count, dim > 0 else { state = .unavailable("the model returned no vector"); return }
-                    if store == nil || store?.dim != dim { store = VectorStore(model: job.model, dim: dim) }
-                } catch {
-                    state = .unavailable((error as? ReaderError)?.message ?? error.localizedDescription)
-                    return
-                }
+                    store = VectorStore(model: job.model, dim: dim)
+                } catch { fail(error); return }
             }
-            guard var s = store else { return }
-            let missing = s.missing(in: job.sentences)
+            guard let current = store else { return }
+            let missing = current.missing(in: job.sentences)
             let byN = Dictionary(job.sentences.compactMap { sent in Sentences.number(sent.id).map { ($0, sent.text) } }, uniquingKeysWith: { a, _ in a })
             state = missing.isEmpty ? .idle : .indexing
             var k = 0
-            while k < missing.count, !Task.isCancelled {
-                let batch = Array(missing[k..<min(k + 32, missing.count)])
+            while k < missing.count, !stale() {
+                let batch = Array(missing[k..<min(k + Self.batch, missing.count)])
                 do {
                     let vectors = try await client.embed(model: job.model, texts: batch.map { byN[$0] ?? "" })
+                    guard !stale() else { return }
                     guard vectors.count == batch.count else { state = .unavailable("the model returned \(vectors.count) vectors for \(batch.count) sentences"); return }
+                    // Taken out of `store` while it grows, so the buffer is not copied each batch.
+                    guard var s = store else { return }
+                    store = nil
                     try s.append(zip(batch, vectors).map { ($0, $1) }, to: job.folder)
                     store = s
                     indexed = s.count
-                } catch {
-                    state = .unavailable((error as? ReaderError)?.message ?? error.localizedDescription)
-                    return
-                }
-                k += 32
+                } catch { fail(error); return }
+                k += Self.batch
             }
-            state = .idle
+            if !stale() { state = .idle }
         }
     }
 
@@ -99,10 +119,13 @@ final class EmbeddingIndexer {
         guard let store, store.count > 0 else { throw ReaderError("nothing is indexed yet") }
         let q = try await OllamaClient(base: base).embed(model: model, texts: [phrase])
         guard let v = q.first else { throw ReaderError("the embedding model returned nothing") }
-        let hits = store.search(v, top: 60)
+        let hits = store.search(v, top: Self.top)
         return Asking.similarPage(phrase, hits: hits, sentences: byId, offset: offset, budget: budget, tokens: tokens)
     }
 
     /// The folder was reset or changed: forget the store (it is reloaded on the next schedule).
-    func reset() { store = nil; folderPath = ""; indexed = 0; state = .off; task?.cancel(); task = nil; queued = nil }
+    func reset() { generation += 1; task?.cancel(); task = nil; queued = nil; store = nil; storeModel = ""; folderPath = ""; indexed = 0; state = .off }
+
+    /// Something went wrong, as against off, checking or idle.
+    var isUnavailable: Bool { if case .unavailable = state { return true }; return false }
 }
