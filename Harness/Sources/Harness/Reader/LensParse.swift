@@ -19,6 +19,8 @@ public enum LensParse {
     public enum Action: Equatable, Sendable {
         case open(file: String, offset: Int, why: String)
         case read(ids: [String], why: String)
+        /// The sentences a word appears in, from the `offset`th match on.
+        case find(word: String, offset: Int, why: String)
         case answer(text: String, evidence: [String], why: String, implied: Bool)
         case none(why: String)
     }
@@ -138,8 +140,8 @@ public enum LensParse {
         return out
     }
 
-    /// Morning action: OPEN <file> [offset <n>] / READ <ids> / ANSWER (text, then EVIDENCE:). A reply
-    /// with no action word but with text is taken as an answer.
+    /// Morning action: OPEN <file> [offset <n>] / READ <ids> / FIND <word> [offset <n>] / ANSWER
+    /// (text, then EVIDENCE:). A reply with no action word but with text is taken as an answer.
     public static func action(_ text: String) -> Action {
         let lines = clean(text).components(separatedBy: "\n")
         let stripped = lines.map(unmark)
@@ -147,7 +149,7 @@ public enum LensParse {
         for l in stripped { if let w = valueAfter(l, keys: ["why"]) { why = w; break } }
         for (i, l) in stripped.enumerated() {
             let low = l.lowercased()
-            guard let kind = ["open", "read", "answer"].first(where: { low.hasPrefix($0) }) else { continue }
+            guard let kind = ["open", "read", "find", "answer"].first(where: { low.hasPrefix($0) }) else { continue }
             var rest = Substring(l.dropFirst(kind.count))
             if let f = rest.first, f.isLetter || f.isNumber { continue } // "opened", "readiness"
             rest = rest.drop(while: { $0 == " " || $0 == ":" || $0 == "：" })
@@ -169,6 +171,20 @@ public enum LensParse {
                 return .open(file: file, offset: offset, why: why)
             case "read":
                 return .read(ids: Sentences.idList(restString), why: why)
+            case "find":
+                let words = restString.split(separator: " ").map(String.init)
+                var offset = 0
+                var term: [String] = []
+                var k = 0
+                while k < words.count {
+                    let lw = words[k].lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ":="))
+                    if lw == "offset" || lw == "@", k + 1 < words.count, let n = Int(words[k + 1].trimmingCharacters(in: CharacterSet(charactersIn: ":=,."))) { offset = n; k += 2; continue }
+                    if lw.hasPrefix("offset"), let n = Int(lw.drop(while: { !$0.isNumber })) { offset = n; k += 1; continue }
+                    if lw.hasPrefix("@"), let n = Int(lw.dropFirst()) { offset = n; k += 1; continue }
+                    term.append(words[k]); k += 1
+                }
+                let word = term.joined(separator: " ").trimmingCharacters(in: CharacterSet(charactersIn: "\"'`,“”‘’"))
+                return .find(word: word, offset: offset, why: why)
             default:
                 var body: [String] = []
                 var evidence: [String]? = nil

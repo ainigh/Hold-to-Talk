@@ -146,6 +146,8 @@ final class ReaderController {
     @ObservationIgnored var isBusy: () -> Bool = { false }
     /// The window is in front, so a notification is not needed.
     @ObservationIgnored var isWindowKey: () -> Bool = { false }
+    /// The words the stream uses most, one per line (word · kind · times), for the asking prompt.
+    @ObservationIgnored var wordsSummary: () -> String = { "" }
 
     init() {
         let d = UserDefaults.standard
@@ -767,6 +769,7 @@ final class ReaderController {
             opts.about = label
             opts.focus = ids.map(Sentences.makeId)
         }
+        opts.words = wordsSummary()
         asking = true; askStep = "reading the notes"; askLive = ""
         let turn = ReaderStream.Turn(q: q, about: r?.id.uuidString, aboutLabel: label)
         chat.append(turn)

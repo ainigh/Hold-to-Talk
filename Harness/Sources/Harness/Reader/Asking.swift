@@ -1,7 +1,8 @@
 import Foundation
 
-/// Asking: one question answered with exactly two moves, open a note file (one page at a time)
-/// or read sentences by id. The model replies in plain lines; `LensParse.action` reads them.
+/// Asking: one question answered with three moves, open a note file (one page at a time), read
+/// sentences by id, or find the sentences a word appears in (a page at a time). The model
+/// replies in plain lines; `LensParse.action` reads them.
 public enum Asking {
     public struct TraceStep: Codable, Equatable, Sendable {
         public var action: String
@@ -33,13 +34,16 @@ public enum Asking {
         public var about: String?
         /// Sentence ids the question is about; the model is told to read them first.
         public var focus: [String] = []
+        /// The words the stream uses most (one per line: word, kind, times), for context and as
+        /// things worth a FIND. Empty for none.
+        public var words = ""
         public init() {}
     }
 
-    public static func system(goals: String, toc: String, corrections: String) -> String {
+    public static func system(goals: String, toc: String, corrections: String, words: String = "") -> String {
         let id42 = Sentences.makeId(42), id43 = Sentences.makeId(43)
         var s = """
-        You answer questions about the author's own stream of thoughts, spoken and written. The stream has been read through several lenses and notes were written into files; every note line cites sentence ids like \(id42). You cannot see the stream directly.
+        You answer questions about the author's own stream of thoughts, spoken and written. The stream has been read through several lenses and notes were written into files; every note line cites sentence ids like \(id42). You cannot see the stream directly, but you can search it for a word. \(Reading.transcriptNote)
 
         Each turn, reply with exactly ONE action, in this plain format and nothing else:
 
@@ -49,11 +53,14 @@ public enum Asking {
         READ \(id42) \(id43)
         WHY: one line on why these sentences
 
+        FIND <a word or short phrase, as the author would have said it> offset <match number, 0 to start>
+        WHY: one line on what you are looking for
+
         ANSWER
         Your answer, in prose, as many lines as you need.
         EVIDENCE: \(id42), \(id43)
 
-        Rules. Start by opening the file most likely to hold the answer (the list below says what each file is for). Before answering, READ the raw sentences you intend to cite; cite only ids you have actually read. When asked how the author felt, quote their words rather than paraphrasing. For "is X present" or "what things are there" questions, check the ledger, and say which files you checked when something is absent. Say plainly what you are unsure of. Answer in the second person ("you"), as a thoughtful reader of the author's notes, not as a search engine. Do not ask the author questions back; answer with what you have. Never wrap the reply in JSON or code fences.
+        Rules. Start by opening the file most likely to hold the answer (the list below says what each file is for), or by FIND when the question names a thing: FIND returns every sentence the word appears in, with its id, a page at a time. Before answering, READ (or have found) the raw sentences you intend to cite; cite only ids you have actually seen. When asked how the author felt, quote their words rather than paraphrasing. For "is X present" or "what things are there" questions, check the ledger or FIND the word, and say which files you checked when something is absent. Say plainly what you are unsure of. Answer in the second person ("you"), as a thoughtful reader of the author's notes, not as a search engine. Do not ask the author questions back; answer with what you have. Never wrap the reply in JSON or code fences.
 
         ## The author's goals
         \(goals)
@@ -62,8 +69,44 @@ public enum Asking {
         \(toc)
 
         """
+        if !words.isEmpty { s += "\n## The words the stream uses most (word · kind · times), the ones worth a FIND\n\(words)\n" }
         if !corrections.isEmpty { s += "\n## The author's corrections to earlier answers (trust these over the notes)\n\(corrections)" }
         return s
+    }
+
+    /// The sentences `word` appears in (case-insensitive, as a whole word or the start of one),
+    /// from the `offset`th match on, within `budget` tokens: one `id<TAB>text` per line and a
+    /// footer saying where the page ends. Returns the ids shown, so they count as read.
+    public static func find(_ word: String, in sentences: [Sentence], offset: Int, budget: Int, tokens: TokenEstimator) -> (text: String, ids: [String]) {
+        let needle = word.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return ("(no word given)", []) }
+        let matches = sentences.filter { contains($0.text, needle) }
+        guard !matches.isEmpty else { return ("No sentence contains “\(word)”. Try another form of the word (as it would have been said), or a shorter one.", []) }
+        let start = max(0, min(offset, matches.count))
+        var used = 0, end = start
+        var lines: [String] = []
+        while end < matches.count {
+            let line = "\(matches[end].id)\t\(matches[end].text)"
+            let t = tokens.estimate(line) + 1
+            if used + t > budget, end > start { break }
+            lines.append(line); used += t; end += 1
+        }
+        let footer = end < matches.count
+            ? "\n[matches \(start)–\(end - 1) of \(matches.count) for “\(word)”; to continue, FIND the same word offset \(end)]"
+            : "\n[matches \(start)–\(end - 1) of \(matches.count) for “\(word)”; that is all of them]"
+        return (lines.joined(separator: "\n") + footer, matches[start..<end].map(\.id))
+    }
+
+    /// `needle` (lowercased) is in `text` at a word's start: "plan" finds "plans" and "planning",
+    /// not "airplane".
+    static func contains(_ text: String, _ needle: String) -> Bool {
+        let low = text.lowercased()
+        var search = low.startIndex
+        while let r = low.range(of: needle, range: search..<low.endIndex) {
+            if r.lowerBound == low.startIndex || !(low[low.index(before: r.lowerBound)].isLetter) { return true }
+            search = r.upperBound
+        }
+        return false
     }
 
     /// One page of a file, by line offset, within `budget` tokens.
@@ -100,7 +143,7 @@ public enum Asking {
         let byId = Dictionary(sentences.map { ($0.id, $0.text) }, uniquingKeysWith: { a, _ in a })
         let tocLines = tableOfContents(folder: folder, lenses: lenses, includeQuestions: options.includeQuestions)
         let system = Self.system(goals: goals, toc: tocLines.isEmpty ? "(no note files yet; nothing has been read)" : tocLines.joined(separator: "\n"),
-                                 corrections: tokens.clip(corrections, 600).text)
+                                 corrections: tokens.clip(corrections, 600).text, words: tokens.clip(options.words, 500).text)
         var steps: [(action: String, result: String)] = []
         var trace: [TraceStep] = []
         var opened: [String] = []
@@ -138,6 +181,7 @@ public enum Asking {
             switch a {
             case let .open(file, offset, why): trace.append(TraceStep(action: "open", file: file, offset: offset, ids: [], why: why))
             case let .read(ids, why): trace.append(TraceStep(action: "read", file: "", offset: 0, ids: ids, why: why))
+            case let .find(word, offset, why): trace.append(TraceStep(action: "find", file: word, offset: offset, ids: [], why: why))
             case let .answer(_, _, why, _): trace.append(TraceStep(action: "answer", file: "", offset: 0, ids: [], why: why))
             case let .none(why): trace.append(TraceStep(action: "none", file: "", offset: 0, ids: [], why: why))
             }
@@ -183,6 +227,11 @@ public enum Asking {
                 }
                 let joined = tokens.clip(out.joined(separator: "\n"), config.pageTokens).text
                 steps.append(("READ \(ids.joined(separator: " "))", joined.isEmpty ? "(no ids given)" : joined))
+            case let .find(word, offset, _):
+                options.onStep?("finding “\(word)”\(offset > 0 ? " from match \(offset)" : "")")
+                let found = find(word, in: sentences, offset: offset, budget: config.pageTokens, tokens: tokens)
+                for id in found.ids { evidenceRead.insert(id) }
+                steps.append(("FIND \(word) offset \(offset)", found.text))
             default: break
             }
         }

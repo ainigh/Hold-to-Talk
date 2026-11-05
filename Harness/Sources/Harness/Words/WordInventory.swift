@@ -2,8 +2,8 @@ import Foundation
 
 /// The words of a text that carry its meaning: every word that is not a closed-class word (a
 /// preposition, pronoun, determiner, conjunction, auxiliary, particle, number), which leaves
-/// the nouns, verbs, adjectives and adverbs, each counted and kept with the kind it was used
-/// as. One pass per item; the stream's inventory is the items' added up. The tagging itself is
+/// the names, nouns, verbs, adjectives and adverbs, each counted and kept with the kind it was
+/// used as. One pass per item; the stream's inventory is the items' added up. The tagging itself is
 /// the caller's (the app uses Apple's NaturalLanguage, with lemmas); `WordInventory.tag` is a
 /// plain fallback that knows the closed classes by list, so the harness can test the rest.
 public enum WordInventory {
@@ -17,11 +17,12 @@ public enum WordInventory {
 
     /// The open classes, and `other` for an open-class word whose kind the tagger could not tell.
     public enum Kind: String, Codable, CaseIterable, Sendable, Comparable {
-        case noun, verb, adjective, adverb, other
+        case name, noun, verb, adjective, adverb, other
         public static func < (a: Kind, b: Kind) -> Bool { a.order < b.order }
         private var order: Int { Kind.allCases.firstIndex(of: self) ?? 0 }
         public var title: String {
             switch self {
+            case .name: "Names"
             case .noun: "Nouns"
             case .verb: "Verbs"
             case .adjective: "Adjectives"
@@ -31,6 +32,7 @@ public enum WordInventory {
         }
         public var single: String {
             switch self {
+            case .name: "name"
             case .noun: "noun"
             case .verb: "verb"
             case .adjective: "adjective"

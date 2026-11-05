@@ -210,6 +210,10 @@ final class AppModel {
         // Whisper and the model share the Mac: reading waits while you record or transcribe.
         reader.isBusy = { [capture, library] in capture.isRecording || library.transcribing != nil }
         reader.isWindowKey = { [weak self] in self?.window?.isKeyWindow ?? false }
+        // The forty words the stream uses most, for the asking prompt: context, and things worth a FIND.
+        reader.wordsSummary = { [words, library] in
+            words.inventory(of: library.ordered).entries.prefix(40).map { "\($0.commonForm) · \($0.kind.single) · \($0.count)" }.joined(separator: "\n")
+        }
         // A spoken answer to one of the reader's questions: the next recording, once transcribed.
         library.onFinal = { [weak self] r in
             guard let self, self.reader.voiceAnswer != nil else { return }

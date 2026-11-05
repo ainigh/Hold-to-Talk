@@ -9,7 +9,7 @@ import NaturalLanguage
 /// the tagger.
 enum WordTagger {
     static func tag(_ text: String) -> [WordInventory.Tagged] {
-        let tagger = NLTagger(tagSchemes: [.lexicalClass, .lemma])
+        let tagger = NLTagger(tagSchemes: [.lexicalClass, .lemma, .nameType])
         tagger.string = text
         let options: NLTagger.Options = [.omitPunctuation, .omitWhitespace, .omitOther, .joinContractions]
         var out: [WordInventory.Tagged] = []
@@ -29,11 +29,15 @@ enum WordTagger {
             guard let kind else { return true }
             let surface = String(text[range])
             guard surface.count > 1 || surface.lowercased() == "i" else { return true }
-            let lemma = tagger.tag(at: range.lowerBound, unit: .word, scheme: .lemma).0?.rawValue ?? surface
+            // A person, place or organisation is a name, whatever class it was given; names keep
+            // their spelling as the key (a lemma of a name is the name).
+            let name = tagger.tag(at: range.lowerBound, unit: .word, scheme: .nameType).0
+            let isName = name == .personalName || name == .placeName || name == .organizationName
+            let lemma = isName ? surface : (tagger.tag(at: range.lowerBound, unit: .word, scheme: .lemma).0?.rawValue ?? surface)
             let key = lemma.lowercased()
             // The tagger calls a few closed-class words "other"; the list catches them.
             guard !WordInventory.closedClass.contains(key) else { return true }
-            out.append(WordInventory.Tagged(lemma: key, kind: kind, surface: surface))
+            out.append(WordInventory.Tagged(lemma: key, kind: isName ? .name : kind, surface: surface))
             return true
         }
         return sawAClass ? out : WordInventory.tag(text)

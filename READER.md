@@ -16,7 +16,8 @@ The expensive reading is done in small pieces as you talk, in the background, in
 - It reads whenever there is something new, never while you record or transcribe (whisper and the model share the Mac). What you say becomes notes within minutes. A lens switched on later reads alone from the start until it reaches the others, then they read together.
 - One lens asks *you* questions: who a name is, what happened next, what a vague reference points to. They wait under **For you**, and beside the recording they came from. Answer by voice (click Answer by voice, hold the hotkey, say it) or by typing; each answer joins the stream and is read like everything else. When the text answers one later, the lens marks it settled.
 - Once everything is read, the reader writes questions from your goals and answers them from the notes; you can pin your own. Each answer is refreshed once you have said enough more. These are a first place to look, and a check on whether the notes can answer what you care about.
-- To answer, the model has exactly two moves: open a note file (one page at a time), or read sentences by id. It must read the sentences it cites. There are no other tools. Every cited id leads back to your words and the recording they were said in.
+- To answer, the model has exactly three moves: open a note file (one page at a time), read sentences by id, or find every sentence a word appears in (a page at a time; "plan" finds "plans" and "planning", not "airplane"). It must have read or found the sentences it cites. There are no other tools. Every cited id leads back to your words and the recording they were said in. It is also given the forty words the stream uses most (word, kind, times), as context and as things worth finding.
+- Every prompt says the text is a machine transcript of speech, typed text included, so a mis-heard word is read for what was meant and named as a likely error rather than built on.
 - Corrections are a file. When you flag an answer, a line goes into `corrections.md`, which is read before every answer. You can also just edit any note file.
 
 ## Where it shows
@@ -28,7 +29,7 @@ The window has three things you use, named in its first column, and the rest und
 - **Status**: Now (what is running: a recording, the transcriber, the reader, each with its stop), Reading (what the reader is doing now: the chunk in hand and which lenses have read it, what the model is writing as it writes it, the log, how far it has come) and Setup.
 - **For you**: the reader's questions, under the item each came from.
 - **Under the hood. Lenses**: the angles, editable. **Notes**: the files it writes, rendered. The **Guide** (this document) is at the bottom of the first column.
-- **Words**, beside ALL and in each item's panel: the open-class words (nouns, verbs, adjectives, adverbs) counted by lemma, the closed classes left out. Not the reader's work: a plain pass with Apple's language tagger, there before any lens has read.
+- **Words**, beside ALL and beside each item: the open-class words (names, nouns, verbs, adjectives, adverbs) counted by lemma, the closed classes left out. Not the reader's work: a plain pass with Apple's language tagger, there before any lens has read. The reader is handed the top of this list with every question.
 
 ## The lenses
 

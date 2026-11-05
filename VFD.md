@@ -45,7 +45,8 @@ Values marked ° are neutral (the axis behaves as if absent). *Required* axes ha
 | `stream.all-row` | `top`, `none`° | `top` | A demarcated ALL row above the items, standing for the whole stream | Choosing it opens the columns for all of it, as choosing an item opens them for one. |
 | `stream.goals-row` | `aboveAll`, `none`° | `aboveAll` | A demarcated Goals row above ALL, opening what you are trying to find out and the questions kept answered | Goals are read with every chunk, so they belong with the input, not with status. |
 | `stream.side-panel` | `ask`, `words`, `none`° | `ask` | What sits beside the whole stream's text; remembered | |
-| `words.classes` | `openOnly` | `openOnly` | Which words the inventory keeps: nouns, verbs, adjectives, adverbs (and words the tagger cannot class), never the closed classes | *Required; single value.* |
+| `words.classes` | `openOnly` | `openOnly` | Which words the inventory keeps: names, nouns, verbs, adjectives, adverbs (and words the tagger cannot class), never the closed classes | Names (people, places, organisations, by the tagger's name scheme) are a kind of their own, keyed by their spelling. *Required; single value.* |
+| `item.side-panel` | `reader`, `words`, `none`° | `reader` | What sits beside an item's text; remembered | The same choice as beside ALL, where `ask` stands in for `reader`. |
 | `words.key` | `lemma`, `surface` | `lemma` | What counts as one word: the lemma ("move" for moved, moving) or the form as written. Every entry keeps the forms it was written as. | `surface` has no interpreter yet (seam). |
 | `words.tagger` | `naturalLanguage`, `list` | `naturalLanguage` | Apple's tagger with lemmas, or the harness's closed-class list (kind `other` throughout) | `list` is reached only as the fallback (relation below); not a choice yet (seam). |
 | `words.click` | `searchCommonForm`, `none`° | `searchCommonForm` | What a click on a word does: searches the stream for the form written most often | A search is a substring of the text, so it must use a form that is in the text, not the lemma. |
@@ -69,6 +70,15 @@ Values marked ° are neutral (the axis behaves as if absent). *Required* axes ha
 | `window.activity` | `topRight`, `sidebar`, `none`° | `topRight` | Where what is running shows, with its Stop or Pause | One place to look; the sidebar was the app before this entry. |
 | `window.activity.items` | `oneByPriority[recording, transcribing, reading, listening]`, `all` | `oneByPriority` | Which running things the line shows when several run: the first of the list that applies, or all of them | A recording matters more than a transcription in progress; one line stays readable. |
 | `window.footer.model` | `name`, `none`° | `name` | The footer names the speech model in use, with the last run (audio length, model, time, chunks, at once) on hover | Lets you judge a model or a worker count by what it did. |
+
+### Asking
+
+| Axis | Values | Default | What it decides | Why |
+|---|---|---|---|---|
+| `ask.moves` | `[open, read, find]` | that | What the model may do before it answers: open a note file by page, read sentences by id, find the sentences a word appears in by page | Exactly these; every cited id must have been read or found. *Required.* |
+| `ask.find-match` | `wordStart` | `wordStart` | What FIND matches: the word at the start of a word, case-insensitive ("plan" finds "plans", not "airplane") | *Single value; probe for `exact` and `anywhere`.* |
+| `ask.words-context` | `top(40)`, `none`° | `top(40)` | How many of the stream's most-used words (word, kind, times) the prompt carries | Context, and things worth a FIND; clipped to 500 tokens. |
+| `prompt.transcript-note` | `always`, `whenAudio`, `never`° | `always` | Whether every prompt (lenses, questions, asking) says the text is a machine transcript with likely errors | The author asked for `always`: typed text is treated the same, so one rule holds everywhere. |
 
 ### Transcribing
 
@@ -107,6 +117,8 @@ Values marked ° are neutral (the axis behaves as if absent). *Required* axes ha
 - `stream.goals-row`, `stream.all-row` and items are exclusive in the selection: the last chosen wins. *Why:* each opens a different right pane. *Consequence:* a multiple selection never includes a special row.
 - `words.key = lemma` needs `words.tagger = naturalLanguage`; with `list` the key is the surface form whatever `words.key` says. *Consequence:* the fallback counts "moved" and "moving" apart.
 - `words.tagger = naturalLanguage` falls back to `list` for a text in which the tagger classes no word. *Consequence:* a text in a language the tagger does not know gets kind `other` throughout.
+- `ask.words-context` depends on the Words group: the summary is the stream's inventory (common form, kind, count), so `words.key` and `words.classes` shape what the model is told. *Consequence:* names count apart, and the model sees "went", not "go".
+- `ask.moves` includes `find` only because the asking engine holds every sentence; FIND reads nothing from the notes. *Consequence:* a FIND page counts as read for citation, like READ.
 - `words.click = searchCommonForm` depends on `words.key`: the search is a substring of the text, so it uses the form written most often, never the lemma. *Consequence:* clicking "go" searches "went" when that is how it was said; the Words panel beside ALL then counts the matching items only.
 - `window.switches = sidebar` would need `window.sidebar-controls` to include the two switches, and `toolbarLeading` needs it not to. *Consequence:* the two change together; `sidebar` has no interpreter today.
 - `window.sections` does not list `reading` or `setup`: they are `status.pages`, and any request for them as a section resolves to Status on that page. *Consequence:* ⌘4 and the Setup button open Status; Done on Setup returns Status to Now.
@@ -130,6 +142,7 @@ items:
   title: firstLine60
   edited-mark: word
   reader-mark: icon
+  side-panel: reader
   timestamp: { row: time, header: full }
   language-mark: header
 stream:
@@ -144,6 +157,11 @@ stream:
 ask:
   scope: byNavigation
   placement: besidePane
+  moves: [open, read, find]
+  find-match: wordStart
+  words-context: top(40)
+prompt:
+  transcript-note: always
 window:
   sections: [stream, status, forYou | lenses, notes | settings | guide]
   sidebar-controls: [setupWarning, guide, updates, quit]
@@ -201,6 +219,9 @@ Where the sets live: `ItemPresentation.swift` (items), `AudioSplit.swift` and `W
 | "Remember the last run across launches" | `LastRun` persisted in Settings or the store | new scope |
 | "Count proper nouns separately" | `words.classes` expansion and a second tagger scheme (names) | axis expansion plus a tagger change |
 | "Show 'went' under 'go' when I click it" | done: entries keep their forms | value |
+| "Let FIND match anywhere in a word" | `ask.find-match` expansion | axis expansion |
+| "Give the lenses the top words too" | `ask.words-context` is asking's; the lens prompt would need its own axis and the chunk budget would shrink by it | new axis |
+| "Say the transcript note only for items with audio" | `prompt.transcript-note = whenAudio`; the prompts are built per stream, not per item, so it needs the stream's items' kinds | value, plus a relation to `item.*` |
 | "Words beside an item instead of under the reader's take" | a shared `sidePanel.kind` | new axis (seam above) |
 | "Reading as a section of its own again" | the routing is code in `section`'s observer, not a value | modification today; a sections registry would make it a value |
 | "Words as a lens the reader can read" | a registry entry: write the inventory into the notes folder as a file | registry entry |
@@ -232,4 +253,5 @@ Where the sets live: `ItemPresentation.swift` (items), `AudioSplit.swift` and `W
 - **Items made uniform (this spec's first entry).** Request: "make a text paste look identical to audio". Before: the row branched on `audioFile == nil` ("text only"), `sessionID` ("heard") and `sourceDevice` ("imported"); the header printed the device and a zero duration for text; Re-transcribe showed disabled for text. Move: a new group, Items, with `item.origin-mark` (shipped `silent`) and `item.measure` (shipped `durationOrWords`); playback and Re-transcribe keyed on audio present. Predicted cost: new axis. Actual: new axis plus modifying the row and header to read it (the first time an axis is introduced into code that had the decision inline). The shipped point moved on purpose: `origin-mark` was `word`, is `tooltip`.
 - **Status, ALL and the ask beside the text.** Requests: the model in the footer; cutting shown apart from transcribing; what is running at the top right with Stop; an ALL row; the conversation beside what it is about; the first column's Ask becomes Status. Moves: `window.activity`, `window.footer.model`, `transcribe.phase`, `stream.all-row`, `ask.scope`, `ask.placement`; `window.sections` and `sidebar-controls` values changed. Predicted: values and new axes. Actual: the same, plus modifying the Ask view into Status and a panel (the conversation had no registry; it does now, `AskPanel`). The shipped point moved on purpose in every one of these. The round's review found a compile error (a setting read before it was fetched), a last-run record for a deleted item, and a bar hidden while transcribing at 0%; all fixed. It also found the activity line's hidden priority rule (now `window.activity.items`), the search filtering ALL without a relation (written), and the two side panels' separate layout numbers (a seam).
 - **Status in columns, Lenses on its own, Goals in the stream, switches at the top, Words.** Requests as listed. Moves: `status.pages`, `window.switches`, `stream.goals-row`, `stream.side-panel`, the `words.*` group; `window.sections` and `sidebar-controls` values changed; Reading and Setup route into Status. Predicted: values, new axes, and one new group (Words) with its own code (a pass in the harness, tested, and a tagger in the app). Actual: the same, plus modifying the Reading view (the lenses out of it) and the Status view (into a column with pages). The shipped point moved on purpose throughout. The round's review found nothing that would not compile; it found a click on a lemma searching for a form not in the text (entries now keep their forms; `words.click` written), a kind label cut wrong, the stream's inventory added up on every redraw (now cached), the word cache keyed on length (now on the text's hash, and cleared on delete), and Setup's Done leaving Status on Setup (now Now).
+- **FIND, the transcript note, the words in the prompt, names, Words beside an item.** Requests: tell the model the text is a transcript; let it ask for the sentences a word is in, paged, and hand it the top words with counts; close what was open (Words as a choice beside an item; names apart). Moves: `ask.moves` gains `find` (a third action in the parser and the engine, paged like OPEN), `ask.words-context`, `prompt.transcript-note` (one sentence, shared by the three prompts), `words.classes` gains names, `item.side-panel`. Predicted: new values and axes. Actual: the same; the parser and engine were extended, not modified (the two moves stand). The shipped point moved on purpose.
 - **First review.** One VFD review of this spec found: three different tests for "has audio" (now `hasAudio` / `hadAudio` on `Recording`, with the relation written); `reader-panel` fused (split into shown and placement); `at-once` hiding `automatic` and a bound (now in the set); `chunk-length` fusing three constants and depending on `at-once` (split, relation written); the edited mark bypassing the registry (now through it) and a second, reader-side edited mark (its own axis); the origin tooltip leaking past `origin-mark` (now a value of it). Declined for now, recorded as seams: a typed origin field, a copy registry, a type-scale axis, the `barOnly` interpreter, routing the reader marks and timestamps through the registry, and design-contract checks.
