@@ -68,6 +68,10 @@ struct ReaderReadingView: View {
                     .controlSize(.small)
                     .disabled(reader.running || reader.folder == nil)
                     .help("Every lens reads from the first sentence again (after changing a lens's instructions, say)")
+                Button("Reset…") { confirmResetReader(model) }
+                    .controlSize(.small)
+                    .disabled(reader.folder == nil)
+                    .help("Start the reader from nothing: notes, stream, goals and questions go to the Trash")
             }
             if reader.config.autoRead, !reader.running, let until = reader.pausedUntil, until > Date() {
                 HStack(spacing: 6) {

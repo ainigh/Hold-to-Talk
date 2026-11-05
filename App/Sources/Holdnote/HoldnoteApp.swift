@@ -40,6 +40,7 @@ struct HoldnoteApp: App {
                     Button("One file per recording…") { model.library.exportMarkdown(model.library.ordered, combined: false) }
                 }
                 Button("Show Holdnote folder in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.library.store.root]) }
+                Button("Reset Everything…") { confirmResetEverything(model) }.disabled(model.capture.isRecording)
             }
             CommandMenu("Reader") {
                 Button("Open the Reader") { model.showReader() }.keyboardShortcut("n", modifiers: [.command, .shift])
@@ -58,6 +59,7 @@ struct HoldnoteApp: App {
                 Button("Add Transcripts to the Stream Now") { _ = model.reader.feedTranscripts() }
                 Divider()
                 Button("Show Reader Folder in Finder") { model.reader.showFolderInFinder() }
+                Button("Reset the Reader…") { confirmResetReader(model) }
                 Button("About the Reader") { model.showReaderAbout() }
             }
             CommandGroup(after: .toolbar) {
@@ -72,6 +74,22 @@ struct HoldnoteApp: App {
             }
         }
     }
+}
+
+/// Asks first: the reader's notes, stream, goals and conversation go to the Trash.
+@MainActor
+func confirmResetReader(_ model: AppModel) {
+    confirm("Reset the reader?",
+            detail: "Its notes, the stream, your goals, the questions and the conversation go to the Trash in one dated folder; to undo, put its contents back in place. Your recordings stay and are read again from the oldest. Lenses and settings are kept.",
+            button: "Reset the Reader") { model.resetReader() }
+}
+
+/// Asks first: every recording and the reader's notes go to the Trash.
+@MainActor
+func confirmResetEverything(_ model: AppModel) {
+    confirm("Reset everything and start with no data?",
+            detail: "Every recording and its audio, and all the reader's notes, goals and questions, go to the Trash in one dated folder; to undo, quit Holdnote and put its contents back in place. The speech model, permissions and settings stay, so you don't download or set up anything again.",
+            button: "Reset Everything") { model.resetEverything() }
 }
 
 /// Starts what belongs to the running app (not to previews): the menu bar icon, the hotkey, the updater.
@@ -292,6 +310,54 @@ final class AppModel {
         if !listed.contains(where: { $0.id == id }) { searchText = "" }
         show(.recordings)
         selection = [id]
+    }
+
+    // MARK: - Starting over
+
+    /// The reader from nothing: its notes, stream, goals and conversation go to the Trash.
+    /// Recordings stay, and join the stream again (oldest first) as if new.
+    func resetReader() {
+        reader.whenIdle { [weak self] in
+            guard let self else { return }
+            switch self.reader.reset() {
+            case let .success(url): self.tell("The reader starts over", StartOver.whereItWent(url))
+            case let .failure(error): self.tell("Could not reset the reader", error.localizedDescription)
+            }
+        }
+    }
+
+    /// Holdnote from nothing, to try it as a new user would: every recording and its audio, and
+    /// the reader's notes, go to the Trash. The speech model, permissions and settings stay.
+    func resetEverything() {
+        guard !capture.isRecording else { tell("Stop the recording first", "A recording is in progress."); return }
+        capture.setListening(false)
+        player.stop()
+        reader.disarmVoiceAnswer()
+        reader.whenIdle { [weak self] in
+            guard let self else { return }
+            var lines: [String] = []
+            do { lines.append("Recordings: " + StartOver.whereItWent(try self.library.reset())) }
+            catch { lines.append("Recordings could not be moved: \(error.localizedDescription)") }
+            switch self.reader.reset() {
+            case let .success(url): lines.append("Reader notes: " + StartOver.whereItWent(url))
+            case let .failure(error): lines.append("Reader notes could not be moved: \(error.localizedDescription)")
+            }
+            self.selection = []
+            self.searchText = ""
+            self.showingAll = false
+            self.show(.recordings)
+            self.tell("Holdnote starts over", lines.joined(separator: "\n\n"))
+        }
+    }
+
+    private func tell(_ title: String, _ detail: String) {
+        Task { @MainActor in
+            let alert = NSAlert()
+            alert.messageText = title
+            alert.informativeText = detail
+            NSApp.activate()
+            alert.runModal()
+        }
     }
 
     /// What the reader does and why.

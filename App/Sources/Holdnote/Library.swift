@@ -77,6 +77,25 @@ final class Library {
 
     func recording(_ id: UUID) -> Recording? { recordings.first { $0.id == id } }
 
+    /// Every recording, its audio and your own order go to the Trash in one folder, and the list
+    /// starts empty. The speech models stay. Returns where the old ones went.
+    func reset() throws -> URL? {
+        deleteTimer?.invalidate(); deleteTimer = nil
+        pendingDeletes = []
+        for t in saveTimers.values { t.invalidate() }
+        saveTimers = [:]
+        // A transcript in flight finds its recording gone and is dropped.
+        queue = []
+        samplesInMemory = [:]
+        let where_ = try StartOver.trash([store.recordingsFolder, store.audioFolder, store.root.appendingPathComponent("order.json")],
+                                         named: "Holdnote recordings", in: store.root)
+        for d in [store.recordingsFolder, store.audioFolder] { try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true) }
+        recordings = []
+        order = []
+        loadProblems = []
+        return where_
+    }
+
     // MARK: - Order
 
     /// Every recording as the list shows it, top first: newest first, or in your own order.

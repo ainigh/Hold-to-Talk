@@ -52,6 +52,7 @@ The window opens on **Setup**, which asks for the four things the hotkey needs, 
 - **Paste text as a note** (⌘⇧V, the Paste toolbar button, or ⌘V with the list focused): it joins the list like a recording, titled by its first words, marked "text only", and goes into Copy All with the rest.
 - **All Text** (⌘⇧A or the toolbar toggle) shows every listed transcript as one continuous text, in the list's order with a date line above each, to read in one piece; select all and copy there, or Copy All, and it is exactly that text that lands on the clipboard. With a search active, it shows the matches only.
 - **The bar at the bottom of the window** shows what the Mac is spending and Holdnote's share of it: CPU in use across every app with Holdnote's part in the accent colour, memory in use of what's installed with Holdnote's footprint (mostly the loaded speech model), and a warning when the Mac is running hot. Hover it for the explanation.
+- **Start over** (Settings → Storage, or the Recording and Reader menus): **Reset the Reader…** sends the reader's notes, stream, goals and questions to the Trash and reads your recordings again from the oldest; **Reset Everything…** sends every recording and its audio there too, to try Holdnote with no data. Both keep the speech model, permissions and settings, and nothing is deleted: it waits in the Trash in one dated folder.
 - Everything lives in `~/Library/Application Support/Holdnote/`: `Recordings/<id>.json`, `Audio/<id>.wav`, `Models/`. Export as Markdown from the Recording menu or Settings → Storage.
 
 ## The reader
