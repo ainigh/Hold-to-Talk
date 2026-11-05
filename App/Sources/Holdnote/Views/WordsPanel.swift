@@ -21,14 +21,9 @@ struct WordsPanel: View {
         let shown = all.entries.filter { kind == nil || $0.kind == kind }
         VStack(spacing: 0) {
             if !compact {
-                HStack {
-                    Label(items.count == 1 ? "Words in this item" : "Words in the stream", systemImage: "textformat.abc")
-                        .font(.system(size: 13, weight: .semibold))
-                    Spacer()
+                PanelHeader(panel: .words) {
                     Text(summary(all.entries, pending: all.pending)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 }
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                Divider()
             }
             Picker("Kind", selection: $kind) {
                 Text("All").tag(WordInventory.Kind?.none)

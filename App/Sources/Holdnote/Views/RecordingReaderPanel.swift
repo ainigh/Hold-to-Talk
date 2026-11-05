@@ -7,6 +7,8 @@ import SwiftUI
 struct RecordingReaderPanel: View {
     let model: AppModel
     let recording: Recording
+    /// One section on its own (For you, Noticed, Ask), or nil for all of them.
+    var focus: SidePanel? = nil
     @State private var question = ""
     @State private var expanded: Set<String> = []
     @FocusState private var asking: Bool
@@ -17,30 +19,34 @@ struct RecordingReaderPanel: View {
     var body: some View {
         let standing = reader.standing(of: recording)
         let ids: [Int] = { if case let .inStream(ids, _) = standing { return ids }; return [] }()
+        VStack(spacing: 0) {
+        PanelHeader(panel: focus ?? .reader) {
+            Flash(text: flash.text)
+            Text(headerMeta(standing, ids: ids)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+        }
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Label("Reader", systemImage: "eyeglasses").font(.system(size: 13, weight: .semibold))
-                    Spacer()
-                    Flash(text: flash.text)
-                }
-                status(standing, ids: ids)
+                if focus == nil || ids.isEmpty { status(standing, ids: ids) }
                 if !ids.isEmpty {
                     let gaps = reader.gapsAbout(ids)
-                    if !gaps.isEmpty {
-                        section("It asks you", count: gaps.count) {
-                            ForEach(gaps) { gap in
-                                GapRow(gap: gap, model: model, compact: true) { msg in if let msg { flash.show(msg) } }
+                    if focus == nil || focus == .forYou {
+                        if !gaps.isEmpty {
+                            section("It asks you", count: gaps.count) {
+                                ForEach(gaps) { gap in
+                                    GapRow(gap: gap, model: model, compact: true) { msg in if let msg { flash.show(msg) } }
+                                }
                             }
+                        } else if focus == .forYou {
+                            line("checkmark.circle", "Nothing to ask you about this one.")
                         }
                     }
-                    findings(ids)
-                    askSection
+                    if focus == nil || focus == .noticed { findings(ids) }
+                    if focus == nil { askSection }
                 }
-
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
         }
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
         .onAppear { takeDraft() }
@@ -52,6 +58,15 @@ struct RecordingReaderPanel: View {
         guard model.askDraftTarget == recording.id else { return }
         if !model.askDraft.isEmpty { question = model.askDraft; model.askDraft = "" }
         asking = true
+    }
+
+    /// The header's meta: where the item stands with the reader, in a few words.
+    private func headerMeta(_ standing: ReaderStream.Standing, ids: [Int]) -> String {
+        switch standing {
+        case .notReady: return "not transcribed yet"
+        case .waiting: return "not in the stream yet"
+        case .inStream: let s = readState(ids); return s.now ? "being read" : s.read ? "read" : "not read yet"
+        }
     }
 
     // MARK: - Where it stands

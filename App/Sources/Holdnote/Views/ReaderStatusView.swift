@@ -108,16 +108,52 @@ struct StatusNowView: View {
     }
 }
 
-/// Your goals: what you are trying to find out, and the questions the reader writes from it
-/// and keeps answered. In the stream's list above ALL, because the lenses read it with
-/// every chunk.
+/// Your goals as a text (KINDS.md): what you are trying to find out, full width, Copy first in
+/// the footer, and beside it the reader's take (the questions it writes from the goals and
+/// keeps answered), the conversation, or its words. In the stream's list above ALL, because
+/// every lens reads it with every chunk.
 struct GoalsView: View {
     let model: AppModel
+    @FocusState private var editing: Bool
 
     var body: some View {
-        ReaderPage(title: "What are you trying to find out?", lede: "Every lens reads this with every chunk, and the questions below are written from it, answered from the notes with your words cited, and answered again as you add more.") {
-            GoalsBlock(model: model)
-            KeptQuestions(model: model)
+        @Bindable var reader = model.reader
+        let goals = reader.goals
+        TextFrame(offered: [.reader, .ask, .words]) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Goals · what are you trying to find out?").font(.system(size: 13, weight: .medium))
+                HStack(spacing: 6) {
+                    Text("\(TranscriptText.wordCount(goals).formatted()) word\(TranscriptText.wordCount(goals) == 1 ? "" : "s")")
+                    if !reader.goalsState.isEmpty { Text("· \(reader.goalsState)") }
+                }
+                .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .help("Your goals: what you are trying to find out. Every lens reads this with every chunk.")
+        } content: {
+            TextEditor(text: $reader.goals)
+                .font(.system(size: 16))
+                .lineSpacing(6)
+                .scrollContentBackground(.hidden)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .focused($editing)
+                .overlay(alignment: .topLeading) {
+                    if goals.isEmpty {
+                        Text("e.g. I want to understand why I keep circling back to the move, what I actually feel about the people involved, and which of my plans I’ve quietly abandoned.")
+                            .font(.system(size: 16)).foregroundStyle(.tertiary).padding(.horizontal, 25).padding(.vertical, 12).allowsHitTesting(false)
+                    }
+                }
+        } footer: {
+            CopyButton(text: goals) { model.library.copy($0) }
+            AppendButton(text: $reader.goals, editing: $editing)
+            Spacer()
+        } side: { panel in
+            switch panel {
+            case .ask: AskPanel(model: model)
+            case .words: WordsPanel(model: model, items: [Recording(id: AppModel.goalsID, sourceDevice: "Goals", machineText: goals, text: goals, status: .final)])
+            default: StandingQuestionsPanel(model: model)
+            }
         }
     }
 }
@@ -177,11 +213,9 @@ struct AskPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Label(about == nil ? "Ask about everything" : "Ask about this item", systemImage: "bubble.left.and.text.bubble.right")
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer()
+            PanelHeader(panel: .ask) {
                 Flash(text: flash.text)
+                Text(about == nil ? "about everything" : "about this item").font(.system(size: 11)).foregroundStyle(.secondary)
                 if !turns.isEmpty, about == nil {
                     Button {
                         confirm("Clear this conversation?", detail: "Flags already written to corrections.md are kept.", button: "Clear") { reader.clearChat() }
@@ -190,8 +224,6 @@ struct AskPanel: View {
                     .help("Clear the conversation")
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 10)
-            Divider()
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
@@ -328,40 +360,26 @@ struct ReaderStatusStrip: View {
     }
 }
 
-/// What you are trying to find out: every lens reads it, and the questions are written from it.
-struct GoalsBlock: View {
-    let model: AppModel
-
-    var body: some View {
-        @Bindable var reader = model.reader
-        ReaderBlock(title: "What are you trying to find out?", lede: "In your own words. Every lens reads this, and the questions below are written from it; change it and they are written again.") {
-            TextEditor(text: $reader.goals)
-                .font(.system(size: 13))
-                .frame(minHeight: 64, maxHeight: 140)
-                .padding(6)
-                .background(RoundedRectangle(cornerRadius: 6).fill(.background))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
-                .overlay(alignment: .topLeading) {
-                    if reader.goals.isEmpty {
-                        Text("e.g. I want to understand why I keep circling back to the move, what I actually feel about the people involved, and which of my plans I’ve quietly abandoned.")
-                            .font(.system(size: 13)).foregroundStyle(.tertiary).padding(11).allowsHitTesting(false)
-                    }
-                }
-            Text(reader.goalsState).font(.system(size: 11)).foregroundStyle(.secondary)
-        }
-    }
-}
-
 /// The questions the reader keeps answered: from your goals, and the ones you pinned. Each answer
 /// is refreshed as the stream grows.
 struct KeptQuestions: View {
     let model: AppModel
+    /// With its own title and lede (on a page), or bare (inside a side panel that has a header).
+    var heading = true
     @State private var open: Set<String> = []
 
     private var reader: ReaderController { model.reader }
 
     var body: some View {
-        ReaderBlock(title: "Questions about your goals", lede: "Written from your goals (and any you pin from the conversation), answered from the notes with your words cited, and answered again once you have said more.") {
+        if heading {
+            ReaderBlock(title: "Questions about your goals", lede: "Written from your goals (and any you pin from the conversation), answered from the notes with your words cited, and answered again once you have said more.") { list }
+        } else {
+            VStack(alignment: .leading, spacing: 8) { list }
+        }
+    }
+
+    @ViewBuilder
+    private var list: some View {
             HStack(spacing: 10) {
                 Text(summary).font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
@@ -380,7 +398,6 @@ struct KeptQuestions: View {
             ForEach(reader.questions, id: \.self) { q in
                 questionRow(q)
             }
-        }
     }
 
     private var summary: String {
