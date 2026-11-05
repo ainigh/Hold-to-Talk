@@ -67,7 +67,7 @@ struct StreamTextView: View {
                     Label("Text only", systemImage: "rectangle").tag("none")
                 }
                 .pickerStyle(.segmented).labelsHidden().controlSize(.small).fixedSize()
-                .help("Beside the text: the conversation about everything, the words that carry its meaning (nouns, verbs, adjectives, adverbs, counted), or nothing")
+                .help("Beside the text: the conversation about everything, the words that carry its meaning (names, nouns, verbs, adjectives, adverbs, counted), or nothing")
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)

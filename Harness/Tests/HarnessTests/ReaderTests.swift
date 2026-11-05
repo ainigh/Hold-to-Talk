@@ -382,6 +382,9 @@ final class ReaderTests: XCTestCase {
         XCTAssertTrue(found.text.hasSuffix("that is all of them]"))
         XCTAssertEqual(Asking.find("plan", in: s, offset: 1, budget: 1000, tokens: t).ids, ["s00003"])
         XCTAssertTrue(Asking.find("zebra", in: s, offset: 0, budget: 1000, tokens: t).text.hasPrefix("No sentence contains"))
+        XCTAssertEqual(Asking.find("Plan.", in: s, offset: 0, budget: 1000, tokens: t).ids, ["s00001", "s00003"])
+        XCTAssertTrue(Asking.find("plan", in: s, offset: 2, budget: 1000, tokens: t).text.hasPrefix("No more matches"))
+        XCTAssertEqual(Asking.find("plans  change", in: s, offset: 0, budget: 1000, tokens: t).ids, ["s00003"])
     }
 }
 

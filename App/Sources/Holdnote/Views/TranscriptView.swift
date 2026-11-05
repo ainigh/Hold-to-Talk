@@ -52,12 +52,12 @@ struct TranscriptView: View {
         .onChange(of: text) { _, new in model.library.setText(new, of: recording.id) }
         .onChange(of: model.askDraftRequests) { _, _ in if model.askDraftTarget == recording.id { showReader = true; side = "reader" } }
         .onAppear { if model.askDraftTarget == recording.id, model.askDraftRequests > 0 { showReader = true; side = "reader" } }
+        .onDisappear { model.library.saveNow() }
     }
 
     @ViewBuilder
     private var panel: some View {
         if side == "words" { WordsPanel(model: model, items: [live]) } else { RecordingReaderPanel(model: model, recording: live) }
-        .onDisappear { model.library.saveNow() }
     }
 
     private var transcript: some View {
@@ -132,10 +132,16 @@ struct TranscriptView: View {
                 Label("Text only", systemImage: "rectangle").tag("none")
             }
             .pickerStyle(.segmented).labelsHidden().controlSize(.small).fixedSize()
-            .help("Beside the text: what the reader made of this item (its questions for you, what each lens noticed, asking about it), the words that carry its meaning, or nothing")
+            .help("Beside the text: what the reader made of this item (its questions for you\(questionsNote(r)), what each lens noticed, asking about it), the words that carry its meaning (names, nouns, verbs, adjectives, adverbs), or nothing")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
+    }
+
+    /// ", 3 waiting" when the reader has questions about this recording; empty otherwise.
+    private func questionsNote(_ r: Recording) -> String {
+        if case let .questions(n) = model.reader.rowMark(for: r) { return ", \(n) waiting" }
+        return ""
     }
 
     /// "Reader", with the number of questions it has about this recording.

@@ -60,7 +60,7 @@ public enum Asking {
         Your answer, in prose, as many lines as you need.
         EVIDENCE: \(id42), \(id43)
 
-        Rules. Start by opening the file most likely to hold the answer (the list below says what each file is for), or by FIND when the question names a thing: FIND returns every sentence the word appears in, with its id, a page at a time. Before answering, READ (or have found) the raw sentences you intend to cite; cite only ids you have actually seen. When asked how the author felt, quote their words rather than paraphrasing. For "is X present" or "what things are there" questions, check the ledger or FIND the word, and say which files you checked when something is absent. Say plainly what you are unsure of. Answer in the second person ("you"), as a thoughtful reader of the author's notes, not as a search engine. Do not ask the author questions back; answer with what you have. Never wrap the reply in JSON or code fences.
+        Rules. Start by opening the file most likely to hold the answer (the list below says what each file is for), or by FIND when the question names a thing: FIND returns every sentence the word appears in, with its id, a page at a time. Before answering, READ or FIND the raw sentences you intend to cite; cite only ids you have seen in a READ or FIND result. When asked how the author felt, quote their words rather than paraphrasing. For "is X present" or "what things are there" questions, check the ledger or FIND the word, and say which files you checked when something is absent. Say plainly what you are unsure of. Answer in the second person ("you"), as a thoughtful reader of the author's notes, not as a search engine. Do not ask the author questions back; answer with what you have. Never wrap the reply in JSON or code fences.
 
         ## The author's goals
         \(goals)
@@ -78,11 +78,12 @@ public enum Asking {
     /// from the `offset`th match on, within `budget` tokens: one `id<TAB>text` per line and a
     /// footer saying where the page ends. Returns the ids shown, so they count as read.
     public static func find(_ word: String, in sentences: [Sentence], offset: Int, budget: Int, tokens: TokenEstimator) -> (text: String, ids: [String]) {
-        let needle = word.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let needle = fold(word)
         guard !needle.isEmpty else { return ("(no word given)", []) }
-        let matches = sentences.filter { contains($0.text, needle) }
+        let matches = sentences.filter { contains(fold($0.text, keepingEnds: true), needle) }
         guard !matches.isEmpty else { return ("No sentence contains “\(word)”. Try another form of the word (as it would have been said), or a shorter one.", []) }
-        let start = max(0, min(offset, matches.count))
+        guard offset < matches.count else { return ("No more matches for “\(word)”: \(matches.count) in all, offsets 0–\(matches.count - 1).", []) }
+        let start = max(0, offset)
         var used = 0, end = start
         var lines: [String] = []
         while end < matches.count {
@@ -97,10 +98,18 @@ public enum Asking {
         return (lines.joined(separator: "\n") + footer, matches[start..<end].map(\.id))
     }
 
-    /// `needle` (lowercased) is in `text` at a word's start: "plan" finds "plans" and "planning",
-    /// not "airplane".
+    /// Lowercased, apostrophes straightened, runs of whitespace one space, and (for the needle)
+    /// punctuation off the ends, so "Lisbon." finds Lisbon and "the  move" finds "the move".
+    static func fold(_ s: String, keepingEnds: Bool = false) -> String {
+        var t = s.lowercased().replacingOccurrences(of: "’", with: "'").replacingOccurrences(of: "‘", with: "'")
+        t = t.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return keepingEnds ? t : t.trimmingCharacters(in: .punctuationCharacters.union(.symbols))
+    }
+
+    /// `needle` (folded) is in `text` (folded) at a word's start: "plan" finds "plans" and
+    /// "planning", not "airplane".
     static func contains(_ text: String, _ needle: String) -> Bool {
-        let low = text.lowercased()
+        let low = text
         var search = low.startIndex
         while let r = low.range(of: needle, range: search..<low.endIndex) {
             if r.lowerBound == low.startIndex || !(low[low.index(before: r.lowerBound)].isLetter) { return true }

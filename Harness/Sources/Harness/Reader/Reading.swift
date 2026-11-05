@@ -41,7 +41,7 @@ public enum Reading {
 
     /// Said to the model before any text of the stream, whatever made it: the stream is treated
     /// as a transcript throughout, so a mis-heard word is read for what was meant, not as a fact.
-    public static let transcriptNote = "The text was transcribed from speech by a machine (text the author typed is treated the same way), so expect a few mis-heard words, names spelled as they sound, missing punctuation and run-on sentences. Read for what was meant; when a word looks mis-transcribed, say so and give the likely word rather than building on the error."
+    public static let transcriptNote = "The stream was spoken and transcribed by a machine, and some of it was typed; read all of it the same way: expect a few mis-heard words, names spelled as they sound, missing punctuation and run-on sentences. Read for what was meant; when a mis-heard word matters to the answer, say so and give the likely word."
 
     /// The model writes plain lines, not JSON: under one `=== <lens id> ===` header per lens, one
     /// entry per line starting with the ids in brackets, and (for lenses that carry one) a NOTEBOOK.
