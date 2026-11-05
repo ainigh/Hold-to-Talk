@@ -647,7 +647,7 @@ final class ReaderController {
                 if raised > 0 {
                     Notifier.post(title: "The reader has \(raised) question\(raised == 1 ? "" : "s") for you", body: "About what you said. Answer by voice or by typing.", open: ReaderView.forYou.rawValue)
                 } else if !auto && long {
-                    Notifier.post(title: "The reader is up to date", body: "Ask about what it found.", open: ReaderView.ask.rawValue)
+                    Notifier.post(title: "The reader is up to date", body: "Ask about what it found.", open: "stream")
                 }
             }
         } else {

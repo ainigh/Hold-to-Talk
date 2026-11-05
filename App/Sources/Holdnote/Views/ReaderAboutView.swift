@@ -40,8 +40,8 @@ The expensive reading is done in small pieces as you talk, in the background, in
 
 The window has three things you use, named in its first column, and the rest under the hood.
 
-- **Stream**: everything you add (recordings, dropped or imported audio, pasted or dropped text), each item text. Choose an item for its own text, with the Reader panel beside it: whether it is in the stream yet and read, the questions it raised for you, what each lens noticed in it, and questions about that item alone (its sentences are read first). An item edited after it joined can join again as a correction. Choose none for the whole stream as one text, which is exactly what the reader reads; select a passage and right-click to ask about it.
-- **Ask**: a conversation about the stream, with the field under it. Your goals and the questions kept answered about them fold out at the top.
+- **Stream**: everything you add (recordings, dropped or imported audio, pasted or dropped text), each item text, under an **ALL** row. Choose ALL for the whole stream as one text, which is exactly what the reader reads, with the conversation about all of it beside it; select a passage and right-click to ask about it. Choose an item for its own text, with the Reader panel beside it: whether it is in the stream yet and read, the questions it raised for you, what each lens noticed in it, and a conversation about that item alone (its sentences are read first). An item edited after it joined can join again as a correction.
+- **Status**: what the reader is doing, what the transcriber is at, your goals, and the questions kept answered about them.
 - **For you**: the reader's questions, under the item each came from.
 - **Under the hood. Reading**: what it is doing now (the chunk in hand and which lenses have read it, what the model is writing as it writes it, the log), how far it has come, and the lenses. **Notes**: the files it writes, rendered. **Guide**: this document.
 
@@ -109,9 +109,9 @@ A rest (default 20 seconds) is taken after every call while reading, so a larger
 ## Setup
 
 1. Install Ollama and pull a model, e.g. `ollama pull llama3.1:8b`. Start it (the menu bar app, or `ollama serve`). A native app needs no `OLLAMA_ORIGINS`.
-2. Open Ask (⌘2). Getting started at the top says what is still missing.
-3. Add something to the stream: hold the hotkey and talk, drop an audio or text file on the window, or paste text. Write your goals (the Goals button on Ask) if you have some. Pick the model in Settings → Reader.
-4. That's all: it reads by itself. Ask, answer its questions under For you or beside the item, click any sentence id to see your words and open the recording. Flag what is wrong.
+2. Open Status (⌘2). Getting started at the top says what is still missing.
+3. Add something to the stream: hold the hotkey and talk, drop an audio or text file on the window, or paste text. Write your goals there if you have some. Pick the model in Settings → Reader.
+4. That's all: it reads by itself. Ask beside ALL or beside an item, answer its questions under For you or beside the item, click any sentence id to see your words and open the recording. Flag what is wrong.
 
 ## Known limits
 

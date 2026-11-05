@@ -17,9 +17,6 @@ struct RecordingList: View {
         let listed = model.listed
         VStack(spacing: 0) {
             ColumnHeader(title: "Stream") {
-                Button { model.showWholeStream() } label: { Image(systemName: "text.alignleft") }
-                    .buttonStyle(.borderless)
-                    .help("The whole stream as one text (⌘⇧A)")
                 Menu {
                     Picker("Order", selection: order) {
                         Text("Newest first, by day").tag(Settings.ListOrder.newestFirst)
@@ -56,6 +53,18 @@ struct RecordingList: View {
             .background(RoundedRectangle(cornerRadius: 7).fill(.quaternary.opacity(0.6)))
             .padding(.horizontal, 10).padding(.vertical, 8)
             List(selection: $model.selection) {
+                // ALL: the whole stream as one text, with the conversation about all of it.
+                Section {
+                    HStack(spacing: 8) {
+                        Image(systemName: "text.alignleft").foregroundStyle(Color.accentColor)
+                        Text("ALL").font(.system(size: 13, weight: .semibold))
+                        Spacer()
+                        Text(listed.count == 1 ? "1 item" : "\(listed.count) items").font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                    .tag(AppModel.allID)
+                    .help("Everything in the stream as one text, exactly what the reader reads, with the conversation about all of it beside it (⌘⇧A)")
+                }
                 if custom {
                     ForEach(listed) { r in item(r) }
                         .onMove { from, to in
@@ -84,8 +93,17 @@ struct RecordingList: View {
                 model.togglePlayback()
                 return .handled
             }
-            // A chosen item shows its own text; none chosen, the whole stream.
-            .onChange(of: model.selection) { _, new in if !new.isEmpty { model.showingAll = false } }
+            // ALL, or nothing chosen, shows the whole stream; an item chosen shows its own text.
+            // ALL and items don't mix: whichever was added last wins.
+            .onChange(of: model.selection) { old, new in
+                if new.contains(AppModel.allID), new.count > 1 {
+                    model.selection = old.contains(AppModel.allID) ? new.subtracting([AppModel.allID]) : [AppModel.allID]
+                } else if new == [AppModel.allID] {
+                    model.showingAll = true
+                } else if !new.isEmpty {
+                    model.showingAll = false
+                }
+            }
             .overlay {
                 if listed.isEmpty {
                     Text(model.searchText.isEmpty ? "Nothing yet. Hold \(model.settings.settings.hotkey.glyph), or drop audio or text files here." : "Nothing matches")

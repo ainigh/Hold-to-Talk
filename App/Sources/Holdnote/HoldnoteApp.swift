@@ -65,7 +65,7 @@ struct HoldnoteApp: App {
             }
             CommandGroup(after: .toolbar) {
                 Button("Stream") { model.show(.recordings) }.keyboardShortcut("1", modifiers: .command)
-                Button("Ask") { model.showReader(.ask) }.keyboardShortcut("2", modifiers: .command)
+                Button("Status") { model.showReader(.status) }.keyboardShortcut("2", modifiers: .command)
                 Button("For You") { model.showReader(.forYou) }.keyboardShortcut("3", modifiers: .command)
                 Divider()
                 Button("Reading") { model.showReader(.reading) }.keyboardShortcut("4", modifiers: .command)
@@ -137,7 +137,7 @@ final class AppModel {
         }
     }
     /// The reader view last shown, where "Open the Reader" goes.
-    var readerView: ReaderView = .ask
+    var readerView: ReaderView = .status
     /// The settings page last shown.
     var settingsTab: SettingsTab = .general
     /// Set by the updater, which quits to swap the app.
@@ -149,8 +149,12 @@ final class AppModel {
     var showingAll = false {
         didSet { if showingAll { section = .recordings } }
     }
-    /// A passage picked in the stream to ask about: the Ask view takes it into its field.
+    /// The row at the top of the stream's list that stands for all of it.
+    static let allID = UUID(uuidString: "00000000-0000-0000-0000-00000000A11A")!
+    /// A passage picked in the stream to ask about: the ask field beside the stream (target
+    /// nil) or beside the item (its id) takes it.
     var askDraft = ""
+    var askDraftTarget: UUID?
     var askDraftRequests = 0
     /// Bumped to put the cursor in the search field.
     var searchRequests = 0
@@ -198,7 +202,7 @@ final class AppModel {
         statusBar = StatusBarController(model: self)
         library.load()
         Notifier.shared.start(onInstall: { [weak self] in self?.updater.confirmInstall() },
-                              onOpen: { [weak self] v in self?.showReader(ReaderView(rawValue: v)) })
+                              onOpen: { [weak self] v in if v == "stream" { self?.showWholeStream() } else { self?.showReader(ReaderView(rawValue: v)) } })
         updater.start()
         capture.onToggleWindow = { [weak self] in self?.toggleWindow() }
         capture.selectedForAppend = { [weak self] in
@@ -308,27 +312,29 @@ final class AppModel {
         show(.reader(view ?? readerView))
     }
 
-    /// The whole stream as one text, in the Stream section.
+    /// The whole stream as one text, in the Stream section: the ALL row.
     func showWholeStream() {
-        selection = []
+        selection = [Self.allID]
         showingAll = true
-        showWindow()
+        show(.recordings)
     }
 
-    /// Ask, with a passage of the stream quoted in the field, to finish the question after it.
+    /// The ask field beside the whole stream, with a passage quoted, to finish the question after it.
     func askAbout(_ passage: String) {
         var excerpt = passage.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ")
         if excerpt.count > 600 { excerpt = String(excerpt.prefix(600)).trimmingCharacters(in: .whitespaces) + "…" }
         askDraft = "About this passage: “\(excerpt)”\n\n"
+        askDraftTarget = nil
         askDraftRequests += 1
-        showReader(.ask)
+        showWholeStream()
     }
 
-    /// Ask, about one item in the stream, by its first words.
+    /// The ask field beside one item, open and focused.
     func askAbout(_ r: Recording) {
-        askDraft = "About my \(r.audioFile != nil ? "recording" : "note") of \(r.createdAt.formatted(date: .abbreviated, time: .shortened)) (“\(r.title)”): "
+        askDraft = ""
+        askDraftTarget = r.id
         askDraftRequests += 1
-        showReader(.ask)
+        openRecording(r.id)
     }
 
     /// A recording in the list, selected and shown (from a sentence id, a question, the stream).

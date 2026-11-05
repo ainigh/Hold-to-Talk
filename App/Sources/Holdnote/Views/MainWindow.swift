@@ -24,7 +24,8 @@ struct MainWindow: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             Divider()
-            UsageBar(monitor: model.monitor, transcribing: model.library.transcribing != nil, listening: model.capture.isListening)
+            UsageBar(monitor: model.monitor, transcribing: model.library.transcribing != nil, listening: model.capture.isListening,
+                     model: model.library.transcribing != nil ? model.library.transcribingModel : model.settings.settings.model, lastRun: model.library.lastRun)
         }
         .toolbar {
             // The same items whatever is showing: a toolbar bridged into an AppKit window
@@ -37,6 +38,9 @@ struct MainWindow: View {
                 .toggleStyle(.button)
                 .tint(model.capture.isSpeaking ? .red : .accentColor)
                 .help("Record by itself whenever you speak; each stretch of speech becomes a recording (⌘⇧L). The menu bar icon pulses while it's on.")
+            }
+            ToolbarItem(placement: .principal) {
+                ActivityStatus(model: model)
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 UpdateStatus(updater: model.updater)
@@ -81,7 +85,7 @@ struct MainWindow: View {
     /// The toolbar's Whole stream: on when the stream shows as one text (by choice, or because
     /// no item is chosen); off picks the first item.
     private var wholeStream: Binding<Bool> {
-        Binding(get: { model.showingAll || model.selection.isEmpty },
+        Binding(get: { model.showingAll || model.selection.isEmpty || model.selection.contains(AppModel.allID) },
                 set: { on in
                     if on { model.showWholeStream() }
                     else { model.showingAll = false; if model.selection.isEmpty, let first = model.listed.first { model.selection = [first.id] } }
@@ -117,7 +121,7 @@ struct MainWindow: View {
     private var detail: some View {
         switch model.section {
         case .recordings: recordings
-        case .reader(.ask): ReaderAskView(model: model, go: { model.showReader($0) })
+        case .reader(.status): ReaderStatusView(model: model, go: { model.showReader($0) })
         case .reader(.forYou): ReaderForYouView(model: model, go: { model.showReader($0) })
         case .reader(.reading): ReaderReadingView(model: model, go: { model.showReader($0) })
         case .reader(.notes): NotesEditor(model: model)
@@ -133,10 +137,10 @@ struct MainWindow: View {
         let selected = model.selectedRecordings
         if model.library.recordings.isEmpty {
             EmptyState(hotkey: model.settings.settings.hotkey)
-        } else if !model.showingAll, selected.count == 1, let r = selected.first {
+        } else if !model.showingAll, !model.selection.contains(AppModel.allID), selected.count == 1, let r = selected.first {
             TranscriptView(model: model, recording: r)
                 .id(r.id)
-        } else if !model.showingAll, selected.count > 1 {
+        } else if !model.showingAll, !model.selection.contains(AppModel.allID), selected.count > 1 {
             MultiSelection(model: model, count: selected.count)
         } else {
             StreamTextView(model: model)
@@ -167,7 +171,7 @@ struct EmptyState: View {
             Text("Or drop audio files (an m4a from Voice Memos, say) or text files here, or paste text (⌘⇧V). Each becomes an item in the stream, and every item becomes text.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
-            Text("The reader reads the stream as it grows, asks you about what it can't place (For you), and answers what you ask about it (Ask, ⌘2).")
+            Text("The reader reads the stream as it grows, asks you about what it can't place (For you), and answers what you ask beside the stream (ALL) or beside any item.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }

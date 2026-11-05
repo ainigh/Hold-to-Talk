@@ -2,15 +2,17 @@ import AppKit
 import Harness
 import SwiftUI
 
-/// The reader's views. Ask (a conversation about the stream) and For you (what it needs you to
-/// tell it) sit beside the Stream in the window's first column; Reading (what it is doing, and
-/// the lenses) and Notes (the files it writes) are under the hood, below.
+/// The reader's views. Status (where things stand: what it is reading, your goals and the
+/// questions it keeps answered) and For you (what it needs you to tell it) sit beside the
+/// Stream in the window's first column; Reading (what it is doing, and the lenses) and Notes
+/// (the files it writes) are under the hood, below. Asking is not a view: it sits beside the
+/// stream (ALL) and beside each item.
 enum ReaderView: String, CaseIterable, Identifiable {
-    case ask, forYou, reading, notes
+    case status, forYou, reading, notes
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .ask: "Ask"
+        case .status: "Status"
         case .forYou: "For you"
         case .reading: "Reading"
         case .notes: "Notes"
@@ -18,14 +20,14 @@ enum ReaderView: String, CaseIterable, Identifiable {
     }
     var symbol: String {
         switch self {
-        case .ask: "bubble.left.and.text.bubble.right"
+        case .status: "gauge.with.needle"
         case .forYou: "questionmark.bubble"
         case .reading: "eyeglasses"
         case .notes: "doc.text"
         }
     }
     /// The two you use; the other two show how it works.
-    var isMain: Bool { self == .ask || self == .forYou }
+    var isMain: Bool { self == .status || self == .forYou }
 }
 
 /// Asks before something is lost, with AppKit's own alert. SwiftUI's confirmationDialog, hosted

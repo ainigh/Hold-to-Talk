@@ -5,7 +5,7 @@ import SwiftUI
 /// The window's first column. Three things you use: the Stream (everything you add, each item
 /// text), Ask (a conversation about it) and For you (what the reader needs you to tell it).
 /// Under the hood, how the reading works: Reading, Notes, the Guide. Then Settings and Setup.
-/// At the bottom, the recording controls that used to be the menu bar menu, and updates.
+/// At the bottom, the recording switches and updates; what is running shows at the top right.
 struct MenuColumn: View {
     @Bindable var model: AppModel
 
@@ -116,33 +116,6 @@ struct MenuColumn: View {
             }
             .toggleStyle(.switch).controlSize(.mini)
             .help("Record by itself whenever you speak (⌘⇧L)")
-            if let id = model.library.transcribing, let r = model.library.recording(id) {
-                Button { model.openRecording(id) } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "waveform.badge.magnifyingglass").foregroundStyle(Color.accentColor)
-                            Text("Transcribing \(r.audioFile != nil && r.duration > 0 ? TranscriptText.duration(r.duration) : "")\(model.library.transcribingNote.isEmpty ? "" : " · " + model.library.transcribingNote)")
-                                .font(.system(size: 11)).lineLimit(2)
-                        }
-                        ProgressView(value: model.library.transcribingProgress).controlSize(.small)
-                    }
-                }
-                .buttonStyle(.plain)
-                .help("Open it")
-            }
-            if reader.running {
-                Button { model.showReader(.reading) } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "eyeglasses").foregroundStyle(Color.accentColor)
-                            Text(readingLine).font(.system(size: 11)).lineLimit(2)
-                        }
-                        ProgressView(value: Double(min(100, max(0, reader.percent))), total: 100).controlSize(.small)
-                    }
-                }
-                .buttonStyle(.plain)
-                .help("Open the Reading view")
-            }
             Divider()
             HStack(spacing: 6) {
                 UpdateStatus(updater: model.updater).buttonStyle(.borderless).controlSize(.small).labelStyle(.iconOnly)
@@ -157,17 +130,13 @@ struct MenuColumn: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var readingLine: String {
-        if let c = reader.chunk { return "Reading \(c.from)–\(c.to)" }
-        if let q = reader.questionInfo, !q.current.isEmpty { return "Answering \(q.done + 1) of \(q.total)" }
-        return reader.status.isEmpty ? "Reading" : reader.status
-    }
-
     private func meta(_ v: ReaderView) -> String {
         switch v {
-        case .ask:
-            if reader.asking { return "asking…" }
-            return reader.chat.isEmpty ? "" : reader.chat.count.formatted()
+        case .status:
+            if reader.running { return "\(reader.percent)%" }
+            if model.library.transcribing != nil { return "transcribing" }
+            let n = reader.questions.count
+            return n == 0 ? "" : "\(reader.questions.filter { reader.answers[$0] != nil }.count)/\(n)"
         case .forYou:
             let n = reader.gaps?.open.count ?? 0
             return n > 0 ? n.formatted() : ""
@@ -183,6 +152,7 @@ struct MenuColumn: View {
     private func attention(_ v: ReaderView) -> Bool {
         switch v {
         case .forYou: (reader.gaps?.open.isEmpty == false) || reader.voiceAnswer != nil
+        case .status: reader.blocker.map { $0.step == "ollama" || $0.step == "folder" } ?? false
         case .reading: (!reader.running && reader.stream.unread > 0 && reader.ollamaOK && !reader.config.autoRead) || (reader.blocker.map { $0.step == "ollama" || $0.step == "folder" } ?? false)
         default: false
         }

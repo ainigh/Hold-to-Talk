@@ -24,6 +24,9 @@ final class WhisperTranscriber: @unchecked Sendable {
     /// How far a transcription is: the fraction of the audio done, weighted by chunk, and the
     /// chunks finished of the chunks there are (1 of 1 for audio that wasn't split).
     struct Progress: Sendable {
+        /// What the transcriber is at: cutting the audio into chunks, or transcribing them.
+        enum Phase: Sendable { case cutting, transcribing }
+        var phase: Phase = .transcribing
         var fraction: Double
         var chunksDone: Int
         var chunks: Int
@@ -147,6 +150,7 @@ final class WhisperTranscriber: @unchecked Sendable {
 
         let seconds = Double(audio.count) / Double(Recorder.modelRate)
         let workers = AudioSplit.workers(requested: options.parallelParts)
+        if seconds >= AudioSplit.minimumToSplit, workers > 1 { progress(Progress(phase: .cutting, fraction: 0, chunksDone: 0, chunks: 0)) }
         let ranges = AudioSplit.ranges(audio, rate: Recorder.modelRate, parts: AudioSplit.parts(seconds: seconds, workers: workers))
         let atOnce = min(workers, ranges.count)
         let cores = max(2, ProcessInfo.processInfo.activeProcessorCount - 2)

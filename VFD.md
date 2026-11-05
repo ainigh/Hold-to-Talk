@@ -42,6 +42,9 @@ Values marked ° are neutral (the axis behaves as if absent). *Required* axes ha
 | `stream.whole-view` | `onNoSelection`, `onlyOnDemand` | `onNoSelection` | When the right pane shows the whole stream as one text | Nothing selected means "all of it"; the toolbar toggle and ⌘⇧A force it. |
 | `stream.header-line` | `dateTime`, `none`° | `dateTime` | The line above each item in the whole-stream text and Copy All | Settings → Storage → Copy all. |
 | `stream.ask-from-selection` | `contextMenu`, `off`° | `contextMenu` | Right-click on a selected passage offers "Ask the reader about this…" | The stream is the input; asking should start from it. |
+| `stream.all-row` | `top`, `none`° | `top` | A demarcated ALL row above the items, standing for the whole stream | Choosing it opens the columns for all of it, as choosing an item opens them for one. |
+| `ask.scope` | `byNavigation` | `byNavigation` | What a question is about: everything when ALL is chosen, one item when an item is | One conversation, filtered by where you are; an item's questions read its sentences first. *Required; single value.* |
+| `ask.placement` | `besidePane`, `ownView` | `besidePane` | Where the conversation sits: beside the text it is about (ALL or item), or as a view of its own | `ownView` was the app before this entry. |
 | `stream.joins-reader` | `afterSettle(seconds)`, `manual` | `afterSettle(60)` | When an item joins the reader's copy of the stream | Settings → Reader. |
 
 ### Window
@@ -54,6 +57,9 @@ Values marked ° are neutral (the axis behaves as if absent). *Required* axes ha
 | `window.reader-panel.shown` | `shown`, `hidden` | `shown` | Whether the reader's take on an item shows beside its text | The toggle on the item's header; remembered globally. |
 | `window.reader-panel.placement` | `auto(660)`, `beside`, `below` | `auto(660)` | Beside the text when the pane is at least 660 pt wide, else below; panel width `min(340, max(280, 34%))` | |
 | `window.voice-answer-row` | `whenArmed`, `never`° | `whenArmed` | The "Hold ⌥ to answer" row in the first column while a spoken answer is awaited | *Relation with the reader's questions.* |
+| `window.activity` | `topRight`, `sidebar`, `none`° | `topRight` | Where what is running shows, with its Stop or Pause | One place to look; the sidebar was the app before this entry. |
+| `window.activity.items` | `oneByPriority[recording, transcribing, reading, listening]`, `all` | `oneByPriority` | Which running things the line shows when several run: the first of the list that applies, or all of them | A recording matters more than a transcription in progress; one line stays readable. |
+| `window.footer.model` | `name`, `none`° | `name` | The footer names the speech model in use, with the last run (audio length, model, time, chunks, at once) on hover | Lets you judge a model or a worker count by what it did. |
 
 ### Transcribing
 
@@ -66,6 +72,7 @@ Values marked ° are neutral (the axis behaves as if absent). *Required* axes ha
 | `transcribe.cut` | `quietestNearEven(search ±8 s, frame 0.1 s)` | that | Where a cut lands | No word is split. *Single value so far.* |
 | `transcribe.seam` | `dropRepeat`, `keepAll`° | `dropRepeat` | A segment that repeats the one before it (whisper hearing a cut twice) is dropped | |
 | `transcribe.retry` | 0, 1, 2 | 1 | How many more tries a failed chunk gets before the whole is given up | |
+| `transcribe.phase` | `[reading, cutting, transcribing]` | that | The phases the transcriber reports, shown as such at the top right and on Status | Reading a long file and cutting it are work of their own; a bar that sits still while they run reads as stuck. *Required.* |
 | `transcribe.progress-view` | `tiles`, `barOnly` | `tiles` | What the transcribing pane shows for more than one chunk (one chunk is always a bar) | A tile per chunk with its own state is what makes "4 at once" visible. Tile grid 84–110 pt, bar 260 pt, board 640 pt. *`barOnly` not yet interpreted (seam).* |
 | `transcribe.stop` | `abortAtNextStep` | that | Stop ends the run at whisper's next step, keeps the audio, marks it stopped for Retry | *Required; single value.* |
 
@@ -74,7 +81,7 @@ Values marked ° are neutral (the axis behaves as if absent). *Required* axes ha
 - **Item.** Every value of every `item.*` axis renders for an item with audio and for one without, from the same row and header; nothing in the row or header may branch on origin except through `item.origin-mark`, and nothing may test for audio except through `Recording.hasAudio` (the file is there) and `Recording.hadAudio` (a length was recorded).
 - **Stream.** The whole-stream text, Copy All and what the reader is fed are the same text in the same order for every value of `stream.order` and `stream.header-line`.
 - **Transcribing.** For every `transcribe.at-once` and `transcribe.chunk-length`, the joined transcript covers the whole audio in order with times offset; progress is monotone; Stop leaves the audio and a Retry that works.
-- **Design.** Text contrast ≥ 4.5:1; secondary text and non-text indicators (status dots, tile tints, marks) ≥ 3:1 on their background; every control at least macOS's small size (20 pt) with a visible focus ring, and a keyboard path for anything draggable; no horizontal scroll in any column at the minimum window size (960 × 560); reduced motion respected. Animations today: the undo toast, the chunk tiles' progress, the editor's fade while transcribing. *Stated, not yet checked (seam).*
+- **Design.** Text contrast ≥ 4.5:1; secondary text and non-text indicators (status dots, tile tints, marks) ≥ 3:1 on their background; every control at least macOS's small size (20 pt) with a visible focus ring, and a keyboard path for anything draggable; no horizontal scroll in any column at the minimum window size (960 × 560); reduced motion respected. Animations today: the undo toast, the chunk tiles' progress, the editor's fade while transcribing, the footer meters easing to a new value, the conversation scrolling to its newest turn. None yet gated on reduced motion. *Stated, not yet checked (seam).*
 
 ## 5. Relations
 
@@ -89,6 +96,10 @@ Values marked ° are neutral (the axis behaves as if absent). *Required* axes ha
 - `item.reader-mark = edited` depends on `stream.joins-reader`: it means edited after the reader took the item, which `item.edited-mark` does not. *Consequence:* a change to `stream.joins-reader` changes when the reader mark appears, never the item's own mark.
 - `window.voice-answer-row` depends on the reader having armed a spoken answer.
 - `transcribe.progress-view` is consulted only when the audio was cut into more than one chunk; the reporting is per-chunk always.
+- `ask.scope = byNavigation` depends on `stream.all-row`: with no ALL row, "everything" has no place to be chosen and the conversation would need a view of its own (`ask.placement = ownView`). *Consequence:* the two change together.
+- `window.activity`, `window.sidebar-controls`, `window.footer.model` and the menu bar glyph all read the running state; the shipped point says it at the top right (with the control), names the model in the footer, and changes the glyph. *Consequence:* a value of `window.activity` other than `topRight` must put the control back in the sidebar or nowhere; the footer and the glyph are not the place to look for the control.
+- `stream.whole-view` follows the search: with a search active, ALL is the matching items only, Copy All copies that, and the reader is still fed everything. *Why:* the search is a lens on the list. *Consequence:* the Stream contract holds when no search is active; "Add N to the reader now" is offered only then.
+- `ask.placement = besidePane` reuses `window.reader-panel.placement`'s rule (beside at ≥ 660 pt, else below). The ask panel is 280–360 pt, the reader panel 280–340 pt; the difference is not intended and is a seam to close with a shared side-panel vocabulary.
 
 ## 6. Scopes and overrides
 
@@ -111,10 +122,16 @@ stream:
   whole-view: onNoSelection
   header-line: dateTime
   ask-from-selection: contextMenu
+  all-row: top
   joins-reader: afterSettle(60)
+ask:
+  scope: byNavigation
+  placement: besidePane
 window:
-  sections: [stream, ask, forYou | reading, notes, guide | settings, setup]
-  sidebar-controls: [hotkey, voiceDetection, transcribing, reading, updates, quit]
+  sections: [stream, status, forYou | reading, notes, guide | settings, setup]
+  sidebar-controls: [hotkey, voiceDetection, updates, quit]
+  activity: topRight
+  footer.model: name
   list-width: 320
   reader-panel: { shown: shown, placement: auto(660) }
   voice-answer-row: whenArmed
@@ -123,6 +140,7 @@ transcribe:
   chunk-min: 60
   split-threshold: 120
   at-once: automatic
+  phase: [reading, cutting, transcribing]
   cut: quietestNearEven(8)
   seam: dropRepeat
   retry: 1
@@ -149,6 +167,13 @@ Where the sets live: `ItemPresentation.swift` (items), `AudioSplit.swift` and `W
 | "Larger type" or "compact rows" | no type-scale or density axis exists (sizes 16/13/11/10 and the 760 pt measure are fixed) | new axis |
 | "In German" | copy is inline English with English plurals; no copy registry | surgery today; a copy registry makes it a registry entry |
 | "Twelve at once on an Ultra" | `transcribe.at-once` bound `maximumAtOnce` | axis expansion |
+| "Ask as a view of its own again" | `ask.placement = ownView` | value (the view exists in history; a registry entry to bring back) |
+| "Which model made this transcript?" | `Recording.model` is stored; a value of `item.measure` or a tooltip | value |
+| "Show the activity in the sidebar too" | `window.activity` expansion to `both` | axis expansion |
+| "Show recording and transcribing at the same time" | `window.activity.items = all` | value |
+| "Pause the transcriber instead of stopping it" | `transcribe.stop` has one value; a pause needs whisper-side work the spec does not estimate | new value, cost unknown |
+| "The reader's progress as tiles, like the transcriber's" | the reader reports a percentage only; a per-chunk report and a `reader.progress-view` axis | new axis |
+| "Remember the last run across launches" | `LastRun` persisted in Settings or the store | new scope |
 
 ## 9. Known seams
 
@@ -161,9 +186,15 @@ Where the sets live: `ItemPresentation.swift` (items), `AudioSplit.swift` and `W
 - `item.reader-mark`, `item.timestamp` and `item.language-mark` are decided inline in `RecordingRow` and `TranscriptView`, not through `ItemPresentation`.
 - `transcribe.progress-view = barOnly` has no interpreter.
 - Origin is sniffed from `sourceDevice` strings ("Imported: …", "Pasted text", "Voice detection") rather than a typed field on `Recording`.
-- Timing and feedback constants not yet axes: the "Copied" badge (1.2 s), the undo window (10 s), the hotkey hold (250 ms), the accidental-recording cutoff (1.5 s).
+- Timing and feedback constants not yet axes: the "Copied" badge (1.2 s), the undo window (10 s), the hotkey hold (250 ms), the accidental-recording cutoff (1.5 s), the autosave debounce (0.6 s), the reader's pause after a failure (10 min), the activity line's bar (70 pt).
+- Side panels (the reader's beside an item, the conversation beside ALL) each carry their own breakpoint and width numbers and remember shown-ness in AppStorage outside Settings (`transcriptReaderPanel`, `streamAskPanel`), which Start Over does not reset. A shared `window.side-panel` vocabulary and an `ask.shown` axis beside `window.reader-panel.shown` would close it.
+- The transcriber's phases are worded in three places (the `Library.Phase` raw values, the activity line, the Status card); the last-run sentence in two. One registry entry per phase and one `LastRun` description would close it.
+- The last run is remembered in memory only; a run before the last launch is gone.
+- The ALL row's selection rule (ALL and items never mix; the last chosen wins) and the whole-stream header's meta list (items, words, reader progress, order) are fixed in code.
+- The activity line is a plain text button without a frame or focus ring (a design-contract exception not yet declared).
 
 ## 10. Build log
 
 - **Items made uniform (this spec's first entry).** Request: "make a text paste look identical to audio". Before: the row branched on `audioFile == nil` ("text only"), `sessionID` ("heard") and `sourceDevice` ("imported"); the header printed the device and a zero duration for text; Re-transcribe showed disabled for text. Move: a new group, Items, with `item.origin-mark` (shipped `silent`) and `item.measure` (shipped `durationOrWords`); playback and Re-transcribe keyed on audio present. Predicted cost: new axis. Actual: new axis plus modifying the row and header to read it (the first time an axis is introduced into code that had the decision inline). The shipped point moved on purpose: `origin-mark` was `word`, is `tooltip`.
+- **Status, ALL and the ask beside the text.** Requests: the model in the footer; cutting shown apart from transcribing; what is running at the top right with Stop; an ALL row; the conversation beside what it is about; the first column's Ask becomes Status. Moves: `window.activity`, `window.footer.model`, `transcribe.phase`, `stream.all-row`, `ask.scope`, `ask.placement`; `window.sections` and `sidebar-controls` values changed. Predicted: values and new axes. Actual: the same, plus modifying the Ask view into Status and a panel (the conversation had no registry; it does now, `AskPanel`). The shipped point moved on purpose in every one of these. The round's review found a compile error (a setting read before it was fetched), a last-run record for a deleted item, and a bar hidden while transcribing at 0%; all fixed. It also found the activity line's hidden priority rule (now `window.activity.items`), the search filtering ALL without a relation (written), and the two side panels' separate layout numbers (a seam).
 - **First review.** One VFD review of this spec found: three different tests for "has audio" (now `hasAudio` / `hadAudio` on `Recording`, with the relation written); `reader-panel` fused (split into shown and placement); `at-once` hiding `automatic` and a bound (now in the set); `chunk-length` fusing three constants and depending on `at-once` (split, relation written); the edited mark bypassing the registry (now through it) and a second, reader-side edited mark (its own axis); the origin tooltip leaking past `origin-mark` (now a value of it). Declined for now, recorded as seams: a typed origin field, a copy registry, a type-scale axis, the `barOnly` interpreter, routing the reader marks and timestamps through the registry, and design-contract checks.
