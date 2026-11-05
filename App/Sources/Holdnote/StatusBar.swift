@@ -70,6 +70,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func clicked() {
         let event = NSApp.currentEvent
         let secondary = event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true
+        // One line per click in the app's output (the smoke test prints it).
+        NSLog("Holdnote: menu bar icon clicked: %@, window %@", secondary ? "menu" : "toggle", model.isWindowVisible ? "open" : "closed")
         if secondary {
             // The menu shows only while it is attached; detached again when it closes, so the
             // button keeps its own click handling.
