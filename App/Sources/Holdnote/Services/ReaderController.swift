@@ -660,6 +660,46 @@ final class ReaderController {
         UserDefaults.standard.set(tokens.charsPerToken, forKey: Self.cptKey)
         refreshStream()
         refreshFiles()
+        let todo = afterStop
+        afterStop = []
+        for action in todo { action() }
+    }
+
+    // MARK: - Starting over
+
+    /// Runs `action` once reading has stopped (stopping it now if it runs), so nothing it saves
+    /// lands after a reset.
+    func whenIdle(_ action: @escaping @MainActor () -> Void) {
+        if running { afterStop.append(action); stopNow() } else { action() }
+    }
+    @ObservationIgnored private var afterStop: [@MainActor () -> Void] = []
+
+    /// The files the reader writes; a reset moves only these, so a folder of your own keeps its other files.
+    static let readerFiles = ["sentences.txt", "stream.txt", "additions.json", "sources.json", "goals.md", "lenses", "answers.md",
+                              "questions.md", "pinned.json", "index.md", "corrections.md", "chat.json", "progress.json", "log.jsonl"]
+
+    /// The reader starts from nothing: its files go to the Trash in one folder, and the goals,
+    /// the conversation and what it was doing are forgotten. Lenses and settings stay. Call it
+    /// through `whenIdle`. Returns where the old files went, or the problem.
+    func reset() -> Result<URL?, Error> {
+        guard let folder, !running else { return .success(nil) }
+        askTask?.cancel()
+        let moved: URL?
+        do { moved = try StartOver.trash(Self.readerFiles.map { folder.root.appendingPathComponent($0) }, named: "Holdnote reader notes", in: folder.root) }
+        catch { return .failure(error) }
+        goals = ""
+        UserDefaults.standard.removeObject(forKey: Self.goalsKey)
+        chat = []; voiceAnswer = nil
+        log = []; lastOutcome = nil; live = nil; chunk = nil; marks = [:]; questionInfo = nil; status = ""
+        pausedUntil = nil
+        settle = ReaderStream.Settle()
+        sentencesCache = nil
+        currentFile = nil; fileBody = ""; loadedBody = ""
+        newQuestionsForYou = 0
+        addLog("started over: the reader's notes went to the Trash")
+        refreshStream()
+        refreshFiles()
+        return .success(moved)
     }
 
     func stopAfterCall() {

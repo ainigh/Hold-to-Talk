@@ -261,6 +261,27 @@ struct StorageSettings: View {
                     Button("One file each…") { model.library.exportMarkdown(model.library.ordered, combined: false) }
                 }
             }
+            Section("Start over") {
+                LabeledContent {
+                    Button("Reset the Reader…") { confirmResetReader(model) }
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("The reader only")
+                        Text("Its notes, stream, goals, questions and conversation. Recordings stay and are read again.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                LabeledContent {
+                    Button("Reset Everything…", role: .destructive) { confirmResetEverything(model) }
+                        .disabled(model.capture.isRecording)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Everything")
+                        Text("Every recording and its audio too, to start with no data. The speech model, permissions and settings stay.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Text("Nothing is deleted: it goes to the Trash in one dated folder. To undo, quit Holdnote and move what's in that folder back where it was.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .padding(.top, 8)
