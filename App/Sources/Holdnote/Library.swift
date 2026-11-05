@@ -19,6 +19,10 @@ final class Library {
     private(set) var transcribingNote = ""
     /// Stop was clicked; whisper is giving up at its next step.
     private(set) var transcribingStopping = false
+    /// Every chunk of the audio being transcribed and where it stands (empty until it's cut), and
+    /// how many run at once.
+    private(set) var transcribingChunks: [WhisperTranscriber.ChunkProgress] = []
+    private(set) var transcribingAtOnce = 1
     /// Recordings deleted and still undoable, newest deletion last.
     private(set) var pendingDeletes: [Recording] = []
     @ObservationIgnored private var deleteTimer: Timer?
@@ -252,6 +256,8 @@ final class Library {
         transcribingProgress = 0
         transcribingNote = ""
         transcribingStopping = false
+        transcribingChunks = []
+        transcribingAtOnce = 1
         transcriber.beginRun()
         let samples = samplesInMemory.removeValue(forKey: job.id)
         let audioURL = store.audioURL(for: r)
@@ -278,7 +284,10 @@ final class Library {
                     Task { @MainActor [weak self] in
                         guard let self, !self.transcribingStopping else { return }
                         self.transcribingProgress = p.fraction
-                        self.transcribingNote = p.chunks > 1 ? "\(p.chunksDone) of \(p.chunks) chunks" : ""
+                        self.transcribingChunks = p.parts
+                        self.transcribingAtOnce = p.atOnce
+                        let running = p.parts.filter { $0.state == .running }.count
+                        self.transcribingNote = p.chunks > 1 ? "\(p.chunksDone) of \(p.chunks) chunks done\(running > 0 ? ", \(running) running" : "")" : ""
                     }
                 })
             } catch {
@@ -294,6 +303,7 @@ final class Library {
         transcribing = nil
         transcribingNote = ""
         transcribingStopping = false
+        transcribingChunks = []
         defer { runQueue() }
         guard let i = index(id) else { return }
         switch outcome {

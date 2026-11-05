@@ -27,6 +27,21 @@ final class WhisperTranscriber: @unchecked Sendable {
         var fraction: Double
         var chunksDone: Int
         var chunks: Int
+        /// Every chunk, in order of the audio, with where it stands.
+        var parts: [ChunkProgress] = []
+        /// How many run at once.
+        var atOnce = 1
+    }
+
+    /// One chunk of the audio as the transcriber works through it.
+    struct ChunkProgress: Sendable, Equatable, Identifiable {
+        var id: Int
+        /// Where it starts in the audio, and how long it is.
+        var start: TimeInterval
+        var seconds: TimeInterval
+        enum State: Sendable, Equatable { case waiting, running, done }
+        var state: State = .waiting
+        var fraction: Double = 0
     }
 
     struct Options: Sendable {
@@ -158,7 +173,8 @@ final class WhisperTranscriber: @unchecked Sendable {
         params.abort_callback_user_data = Unmanaged.passUnretained(cancelFlag).toOpaque()
         let language = options.language.isEmpty ? "auto" : options.language
         let prompt = options.prompt
-        let tally = ProgressTally(weights: ranges.map { Double($0.count) / Double(audio.count) }, report: progress)
+        let tally = ProgressTally(ranges: ranges, rate: Recorder.modelRate, atOnce: atOnce, report: progress)
+        tally.announce()
         let collector = PartCollector(count: ranges.count)
         let next = ChunkCounter()
         // The C strings live for the whole run: every chunk's params point at them.
@@ -181,6 +197,7 @@ final class WhisperTranscriber: @unchecked Sendable {
                         let range = ranges[i]
                         let offset = Double(range.lowerBound) / Double(Recorder.modelRate)
                         let part = PartProgress(tally: tally, index: i)
+                        tally.started(i)
                         var mine = base
                         mine.progress_callback_user_data = Unmanaged.passUnretained(part).toOpaque()
                         let chunk = Array(audio[range])
@@ -225,7 +242,7 @@ final class WhisperTranscriber: @unchecked Sendable {
                 throw Problem("whisper failed.")
             }
         }
-        progress(Progress(fraction: 1, chunksDone: ranges.count, chunks: ranges.count))
+        progress(Progress(fraction: 1, chunksDone: ranges.count, chunks: ranges.count, parts: tally.allDone, atOnce: atOnce))
         return Result(segments: AudioSplit.joined(parts), language: detected, model: name)
     }
 
@@ -256,35 +273,54 @@ final class WhisperTranscriber: @unchecked Sendable {
         func report(_ fraction: Double) { tally.set(index, fraction) }
     }
 
-    /// The chunks' progress added up by their share of the audio, and how many are finished.
+    /// The chunks' progress: each one's own, added up by their share of the audio, and how
+    /// many are finished. Reported on every change, so the window can show every chunk.
     final class ProgressTally: @unchecked Sendable {
         private let lock = NSLock()
-        private var fractions: [Double]
+        private var parts: [ChunkProgress]
         private var done = 0
         private let weights: [Double]
+        private let atOnce: Int
         private let report: @Sendable (Progress) -> Void
-        init(weights: [Double], report: @escaping @Sendable (Progress) -> Void) {
-            self.weights = weights
-            fractions = Array(repeating: 0, count: weights.count)
+        init(ranges: [Range<Int>], rate: Int, atOnce: Int, report: @escaping @Sendable (Progress) -> Void) {
+            let total = Double(ranges.last?.upperBound ?? 1)
+            weights = ranges.map { Double($0.count) / total }
+            parts = ranges.enumerated().map { i, r in
+                ChunkProgress(id: i, start: Double(r.lowerBound) / Double(rate), seconds: Double(r.count) / Double(rate))
+            }
+            self.atOnce = atOnce
             self.report = report
+        }
+        /// Every chunk marked done (the end).
+        var allDone: [ChunkProgress] { lock.lock(); defer { lock.unlock() }; return parts.map { var c = $0; c.state = .done; c.fraction = 1; return c } }
+        /// The layout before anything runs: every chunk waiting.
+        func announce() { lock.lock(); let p = current; lock.unlock(); report(p) }
+        func started(_ i: Int) {
+            lock.lock()
+            parts[i].state = .running
+            let p = current
+            lock.unlock()
+            report(p)
         }
         func set(_ i: Int, _ fraction: Double) {
             lock.lock()
-            fractions[i] = max(fractions[i], min(1, fraction))
+            parts[i].fraction = max(parts[i].fraction, min(1, fraction))
+            if parts[i].state == .waiting { parts[i].state = .running }
             let p = current
             lock.unlock()
             report(p)
         }
         func finished(_ i: Int) {
             lock.lock()
-            fractions[i] = 1
+            parts[i].fraction = 1
+            parts[i].state = .done
             done += 1
             let p = current
             lock.unlock()
             report(p)
         }
         private var current: Progress {
-            Progress(fraction: zip(fractions, weights).reduce(0) { $0 + $1.0 * $1.1 }, chunksDone: done, chunks: weights.count)
+            Progress(fraction: zip(parts, weights).reduce(0) { $0 + $1.0.fraction * $1.1 }, chunksDone: done, chunks: parts.count, parts: parts, atOnce: atOnce)
         }
     }
 
