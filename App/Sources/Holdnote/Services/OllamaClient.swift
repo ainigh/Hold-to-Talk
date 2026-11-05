@@ -73,6 +73,17 @@ struct OllamaClient: ChatModel {
         return info
     }
 
+    /// Vectors for `texts` from an embedding model (Ollama's /api/embed), one per text.
+    func embed(model: String, texts: [String]) async throws -> [[Float]] {
+        let (data, response) = try await Self.session.data(for: post("/api/embed", ["model": model, "input": texts, "keep_alive": "30m"], timeout: 120))
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw Self.httpError((response as? HTTPURLResponse)?.statusCode ?? 0, data)
+        }
+        let d = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+        let rows = d["embeddings"] as? [[NSNumber]] ?? []
+        return rows.map { $0.map { $0.floatValue } }
+    }
+
     private static func httpError(_ status: Int, _ body: Data) -> ReaderError {
         var msg = String(decoding: body.prefix(200), as: UTF8.self)
         if let j = try? JSONSerialization.jsonObject(with: body) as? [String: Any], let e = j["error"] as? String { msg = e }

@@ -97,6 +97,11 @@ struct StatusNowView: View {
                     }
                 }
                 ReaderStatusStrip(model: model, go: { model.showReader($0) })
+                HStack(spacing: 6) {
+                    Image(systemName: "point.3.connected.trianglepath.dotted").font(.system(size: 11)).foregroundStyle(reader.indexer.available ? Color.accentColor : Color.secondary)
+                    Text(reader.indexer.line).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
+                }
+                .help("The SIMILAR move: every sentence is turned into a vector by an embedding model as it joins the stream, so the model can ask for the sentences nearest in meaning to a phrase. Settings → Reader names the model; without one the move is not offered.")
                 Button("Details") { model.statusTab = .reading }.buttonStyle(.link).font(.system(size: 12))
             }
         }

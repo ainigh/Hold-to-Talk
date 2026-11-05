@@ -21,6 +21,8 @@ public enum LensParse {
         case read(ids: [String], why: String)
         /// The sentences a word appears in, from the `offset`th match on.
         case find(word: String, offset: Int, why: String)
+        /// The sentences nearest in meaning to a phrase, from the `offset`th on.
+        case similar(phrase: String, offset: Int, why: String)
         case answer(text: String, evidence: [String], why: String, implied: Bool)
         case none(why: String)
     }
@@ -140,8 +142,9 @@ public enum LensParse {
         return out
     }
 
-    /// Morning action: OPEN <file> [offset <n>] / READ <ids> / FIND <word> [offset <n>] / ANSWER
-    /// (text, then EVIDENCE:). A reply with no action word but with text is taken as an answer.
+    /// Morning action: OPEN <file> [offset <n>] / READ <ids> / FIND <word> [offset <n>] / SIMILAR
+    /// <phrase> [offset <n>] / ANSWER (text, then EVIDENCE:). A reply with no action word but
+    /// with text is taken as an answer.
     public static func action(_ text: String) -> Action {
         let lines = clean(text).components(separatedBy: "\n")
         let stripped = lines.map(unmark)
@@ -149,7 +152,7 @@ public enum LensParse {
         for l in stripped { if let w = valueAfter(l, keys: ["why"]) { why = w; break } }
         for (i, l) in stripped.enumerated() {
             let low = l.lowercased()
-            guard let kind = ["open", "read", "find", "answer"].first(where: { low.hasPrefix($0) }) else { continue }
+            guard let kind = ["open", "read", "find", "similar", "answer"].first(where: { low.hasPrefix($0) }) else { continue }
             var rest = Substring(l.dropFirst(kind.count))
             if let f = rest.first, f.isLetter || f.isNumber { continue } // "opened", "readiness"
             rest = rest.drop(while: { $0 == " " || $0 == ":" || $0 == "：" })
@@ -171,7 +174,7 @@ public enum LensParse {
                 return .open(file: file, offset: offset, why: why)
             case "read":
                 return .read(ids: Sentences.idList(restString), why: why)
-            case "find":
+            case "find", "similar":
                 let words = restString.split(separator: " ").map(String.init)
                 var offset = 0
                 var term: [String] = []
@@ -184,7 +187,7 @@ public enum LensParse {
                     term.append(words[k]); k += 1
                 }
                 let word = term.joined(separator: " ").trimmingCharacters(in: CharacterSet(charactersIn: "\"'`,“”‘’"))
-                return .find(word: word, offset: offset, why: why)
+                return kind == "find" ? .find(word: word, offset: offset, why: why) : .similar(phrase: word, offset: offset, why: why)
             default:
                 var body: [String] = []
                 var evidence: [String]? = nil

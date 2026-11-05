@@ -351,6 +351,12 @@ struct ReaderSettings: View {
                 Text("num_ctx is set automatically to W + output cap + 512 (\(reader.config.numCtx.formatted()) now) so Ollama never truncates a prompt. Every prompt is measured before it is sent and refused if it is over W. Chars per token is recalibrated after every call.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Section("Finding by meaning") {
+                TextField("Embedding model", text: $reader.config.embedModel)
+                Text(reader.indexer.line).font(.caption).foregroundStyle(reader.indexer.available ? Color.secondary : Color.orange)
+                Text("An Ollama embedding model (ollama pull nomic-embed-text, about 270 MB). Every sentence is embedded once as it joins the stream, into vectors.bin in the notes folder, and the model answering questions gets a SIMILAR move: the sentences nearest in meaning to a phrase, a page at a time. Empty turns it off; nothing else changes.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("The notes") {
                 LabeledContent("Notes folder") {
                     HStack {
