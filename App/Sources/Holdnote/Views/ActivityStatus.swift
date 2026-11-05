@@ -18,7 +18,7 @@ struct ActivityStatus: View {
                 Button("Stop") { model.capture.stopFromMenu() }.controlSize(.small)
             } else if let id = library.transcribing {
                 line("waveform.badge.magnifyingglass", transcribingText, color: .accentColor) { model.openRecording(id) }
-                if library.transcribingPhase == .transcribing, !library.transcribingChunks.isEmpty || library.transcribingProgress > 0 {
+                if library.transcribingPhase == .transcribing {
                     ProgressView(value: library.transcribingProgress).frame(width: 70).controlSize(.small)
                 }
                 Button(library.transcribingStopping ? "Stopping…" : "Stop") { library.cancelTranscription() }
@@ -47,7 +47,7 @@ struct ActivityStatus: View {
             }
         }
         .buttonStyle(.plain)
-        .help("Open it")
+        .help("Open what this is about")
     }
 
     private var transcribingText: String {

@@ -274,12 +274,12 @@ final class Library {
         transcribingChunks = []
         transcribingAtOnce = 1
         transcribingPhase = .transcribing
+        let s = settings()
         transcribingModel = s.model
         transcriber.beginRun()
         let started = Date()
         let samples = samplesInMemory.removeValue(forKey: job.id)
         let audioURL = store.audioURL(for: r)
-        let s = settings()
         let options = WhisperTranscriber.Options(language: s.language, prompt: TranscriptText.vocabularyPrompt(s.vocabulary), parallelParts: s.parallelParts)
         let transcriber = transcriber
         let model = s.model
@@ -321,8 +321,10 @@ final class Library {
 
     private func finished(_ id: UUID, appendTo: UUID?, outcome: Swift.Result<WhisperTranscriber.Result, Error>, removeFillers: Bool, elapsed: TimeInterval) {
         let stopped: Bool = { if case let .failure(e) = outcome, (e as? WhisperTranscriber.Problem)?.isCancelled == true { return true }; return false }()
-        lastRun = LastRun(model: transcribingModel, audioSeconds: recording(id)?.duration ?? 0, elapsed: elapsed,
-                          chunks: max(1, transcribingChunks.count), atOnce: transcribingAtOnce, stopped: stopped)
+        if let r = recording(id), r.duration > 0, elapsed > 0 {
+            lastRun = LastRun(model: transcribingModel, audioSeconds: r.duration, elapsed: elapsed,
+                              chunks: max(1, transcribingChunks.count), atOnce: transcribingAtOnce, stopped: stopped)
+        }
         transcribing = nil
         transcribingNote = ""
         transcribingStopping = false
