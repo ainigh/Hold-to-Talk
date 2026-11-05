@@ -2,83 +2,48 @@ import AppKit
 import Harness
 import SwiftUI
 
-/// The whole stream as one continuous text: every item in the list, in the list's order with a
-/// date line above each, exactly what the reader reads and what Copy All puts on the clipboard.
-/// Select any passage and right-click to ask the reader about it.
+/// ALL, the whole stream as one text (KINDS.md): every item in the list, in the list's order with
+/// a date line above each, exactly what the reader reads and what Copy All puts on the
+/// clipboard. The same chrome as any text: Copy first in the footer, and beside it its
+/// questions for you, the conversation, or its words. Select any passage and right-click to
+/// ask the reader about it.
 struct StreamTextView: View {
     let model: AppModel
-    @State private var copied = false
-    @AppStorage("streamAskPanel") private var showAsk = true
-    /// Which panel sits beside the text: the conversation, or the words.
-    @AppStorage("streamSidePanel") private var side = "ask"
+    @AppStorage(SidePanel.key) private var side = SidePanel.reader.rawValue
 
     private var reader: ReaderController { model.reader }
 
     var body: some View {
-        GeometryReader { geo in
-            let wide = geo.size.width >= 660
-            if showAsk, wide {
-                HStack(spacing: 0) {
-                    stream
-                    Divider()
-                    panel.frame(width: min(360, max(280, geo.size.width * 0.36)))
-                }
-            } else if showAsk {
-                VSplitView {
-                    stream.frame(minHeight: 200)
-                    panel.frame(minHeight: 160, idealHeight: 280)
-                }
-            } else {
-                stream
-            }
-        }
-        .onChange(of: model.askDraftRequests) { _, _ in if model.askDraftTarget == nil { showAsk = true; side = "ask" } }
-    }
-
-    @ViewBuilder
-    private var panel: some View {
-        if side == "words" { WordsPanel(model: model, items: model.listed) } else { AskPanel(model: model) }
-    }
-
-    private var stream: some View {
         let text = model.allText
-        return VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(model.searchText.isEmpty ? "ALL · the whole stream" : "Items matching “\(model.searchText)”")
-                        .font(.system(size: 13, weight: .medium))
-                    Text(meta(text)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer()
-                if reader.unfedCount > 0, reader.folder != nil, model.searchText.isEmpty {
-                    Button("Add \(reader.unfedCount) to the reader now") { _ = reader.feedTranscripts() }
-                        .controlSize(.small)
-                        .help("Items join the reader's stream by themselves a minute after they settle; this adds them at once")
-                }
-                Button {
-                    model.library.copy(text)
-                    copied = true
-                    Task { try? await Task.sleep(for: .milliseconds(1200)); copied = false }
-                } label: { Label(copied ? "Copied" : "Copy All", systemImage: copied ? "checkmark" : "doc.on.doc") }
-                .help("Copy everything shown (⌘⇧C)")
-                Picker("Beside", selection: Binding(get: { showAsk ? side : "none" }, set: { v in if v == "none" { showAsk = false } else { showAsk = true; side = v } })) {
-                    Label("Ask", systemImage: "bubble.left.and.text.bubble.right").tag("ask")
-                    Label("Words", systemImage: "textformat.abc").tag("words")
-                    Label("Text only", systemImage: "rectangle").tag("none")
-                }
-                .pickerStyle(.segmented).labelsHidden().controlSize(.small).fixedSize()
-                .help("Beside the text: the conversation about everything, the words that carry its meaning (names, nouns, verbs, adjectives, adverbs, counted), or nothing")
+        TextFrame(offered: [.forYou, .ask, .words]) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(model.searchText.isEmpty ? "ALL · the whole stream" : "Items matching “\(model.searchText)”")
+                    .font(.system(size: 13, weight: .medium))
+                Text(meta(text)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            Divider()
+        } content: {
             if model.listed.isEmpty {
                 Text(model.searchText.isEmpty ? "Nothing in the stream yet." : "Nothing matches.")
                     .foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 SelectableText(text: text) { passage in model.askAbout(passage) }
             }
+        } footer: {
+            CopyButton(text: text, title: "Copy All", help: "Copy everything shown (⌘⇧C)") { model.library.copy($0) }
+            if reader.unfedCount > 0, reader.folder != nil, model.searchText.isEmpty {
+                Button { _ = reader.feedTranscripts() } label: { Label("Add \(reader.unfedCount) to the reader now", systemImage: "eyeglasses") }
+                    .help("Items join the reader's stream by themselves a minute after they settle; this adds them at once")
+            }
+            Spacer()
+        } side: { panel in
+            switch panel {
+            case .forYou: OpenQuestionsPanel(model: model)
+            case .words: WordsPanel(model: model, items: model.listed)
+            default: AskPanel(model: model)
+            }
         }
+        // "Ask the reader about this…": the conversation beside the text, the passage in its field.
+        .onChange(of: model.askDraftRequests) { _, _ in if model.askDraftTarget == nil { side = SidePanel.ask.rawValue } }
     }
 
     private func meta(_ text: String) -> String {

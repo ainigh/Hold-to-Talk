@@ -108,16 +108,56 @@ struct StatusNowView: View {
     }
 }
 
-/// Your goals: what you are trying to find out, and the questions the reader writes from it
-/// and keeps answered. In the stream's list above ALL, because the lenses read it with
-/// every chunk.
+/// Your goals as a text (KINDS.md): what you are trying to find out, full width, Copy first in
+/// the footer, and beside it the reader's take (the questions it writes from the goals and
+/// keeps answered), the conversation, or its words. In the stream's list above ALL, because
+/// every lens reads it with every chunk.
 struct GoalsView: View {
     let model: AppModel
+    @FocusState private var editing: Bool
 
     var body: some View {
-        ReaderPage(title: "What are you trying to find out?", lede: "Every lens reads this with every chunk, and the questions below are written from it, answered from the notes with your words cited, and answered again as you add more.") {
-            GoalsBlock(model: model)
-            KeptQuestions(model: model)
+        @Bindable var reader = model.reader
+        let goals = reader.goals
+        TextFrame(offered: [.reader, .ask, .words]) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Goals · what are you trying to find out?").font(.system(size: 13, weight: .medium))
+                HStack(spacing: 6) {
+                    Text("\(TranscriptText.wordCount(goals).formatted()) word\(TranscriptText.wordCount(goals) == 1 ? "" : "s")")
+                    if !reader.goalsState.isEmpty { Text("· \(reader.goalsState)") }
+                }
+                .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .help("Every lens reads this with every chunk, and the reader writes questions from it that it keeps answered as you add more.")
+        } content: {
+            TextEditor(text: $reader.goals)
+                .font(.system(size: 16))
+                .lineSpacing(6)
+                .scrollContentBackground(.hidden)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .focused($editing)
+                .overlay(alignment: .topLeading) {
+                    if goals.isEmpty {
+                        Text("e.g. I want to understand why I keep circling back to the move, what I actually feel about the people involved, and which of my plans I’ve quietly abandoned.")
+                            .font(.system(size: 16)).foregroundStyle(.tertiary).padding(.horizontal, 25).padding(.vertical, 12).allowsHitTesting(false)
+                    }
+                }
+        } footer: {
+            CopyButton(text: goals, help: "Copy the goals") { model.library.copy($0) }
+            Button {
+                editing = true
+                NSApp.sendAction(#selector(NSTextView.moveToEndOfDocument(_:)), to: nil, from: nil)
+            } label: { Label("Append", systemImage: "text.append") }
+            .help("Add to the goals at the end")
+            Spacer()
+        } side: { panel in
+            switch panel {
+            case .ask: AskPanel(model: model)
+            case .words: WordsPanel(model: model, items: [Recording(id: AppModel.goalsID, sourceDevice: "Goals", machineText: goals, text: goals, status: .final)])
+            default: StandingQuestionsPanel(model: model)
+            }
         }
     }
 }
@@ -325,30 +365,6 @@ struct ReaderStatusStrip: View {
         if reader.unfedCount > 0 { return "\(reader.unfedCount) item\(reader.unfedCount == 1 ? "" : "s") about to join the reader's stream" }
         if s.questionsPending > 0 || s.questionsToWrite { return "Questions to answer from what was read" }
         return "Up to date · \(s.count.formatted()) sentences read"
-    }
-}
-
-/// What you are trying to find out: every lens reads it, and the questions are written from it.
-struct GoalsBlock: View {
-    let model: AppModel
-
-    var body: some View {
-        @Bindable var reader = model.reader
-        ReaderBlock(title: "What are you trying to find out?", lede: "In your own words. Every lens reads this, and the questions below are written from it; change it and they are written again.") {
-            TextEditor(text: $reader.goals)
-                .font(.system(size: 13))
-                .frame(minHeight: 64, maxHeight: 140)
-                .padding(6)
-                .background(RoundedRectangle(cornerRadius: 6).fill(.background))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
-                .overlay(alignment: .topLeading) {
-                    if reader.goals.isEmpty {
-                        Text("e.g. I want to understand why I keep circling back to the move, what I actually feel about the people involved, and which of my plans I’ve quietly abandoned.")
-                            .font(.system(size: 13)).foregroundStyle(.tertiary).padding(11).allowsHitTesting(false)
-                    }
-                }
-            Text(reader.goalsState).font(.system(size: 11)).foregroundStyle(.secondary)
-        }
     }
 }
 

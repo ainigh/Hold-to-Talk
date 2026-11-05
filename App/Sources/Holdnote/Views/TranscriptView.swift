@@ -2,19 +2,17 @@ import AppKit
 import Harness
 import SwiftUI
 
-/// The right pane: the date, duration and play button above an editable transcript. Everything
-/// you type is saved as you type. While playing, the sentence being spoken is highlighted;
-/// click a sentence to hear it. Beside it (or under it, when the pane is narrow), what the reader
-/// made of this recording.
+/// One item of the stream as a text (KINDS.md): the date, measure and play button in the header,
+/// the editable text full width, Copy first in the footer, and beside it whatever the side
+/// chooser says: the reader's take, its questions for you, what was noticed, the conversation,
+/// its words. Everything you type is saved as you type. While playing, the sentence being
+/// spoken is highlighted; click a sentence to hear it.
 struct TranscriptView: View {
     let model: AppModel
     let recording: Recording
     @State private var text: String
-    @State private var copied = false
     @FocusState private var editing: Bool
-    @AppStorage("transcriptReaderPanel") private var showReader = true
-    /// Which panel sits beside the text: the reader's take, or the words.
-    @AppStorage("itemSidePanel") private var side = "reader"
+    @AppStorage(SidePanel.key) private var side = SidePanel.reader.rawValue
 
     init(model: AppModel, recording: Recording) {
         self.model = model
@@ -27,22 +25,15 @@ struct TranscriptView: View {
     private var isPlayingThis: Bool { model.player.playing == recording.id }
 
     var body: some View {
-        GeometryReader { geo in
-            let wide = geo.size.width >= 660
-            if showReader, wide {
-                HStack(spacing: 0) {
-                    transcript
-                    Divider()
-                    panel.frame(width: min(340, max(280, geo.size.width * 0.34)))
-                }
-            } else if showReader {
-                VSplitView {
-                    transcript.frame(minHeight: 200)
-                    panel.frame(minHeight: 140, idealHeight: 260)
-                }
-            } else {
-                transcript
-            }
+        let r = live
+        TextFrame(offered: [.reader, .forYou, .noticed, .ask, .words]) {
+            header(r)
+        } content: {
+            content(r)
+        } footer: {
+            footer(r)
+        } side: { panel in
+            if panel == .words { WordsPanel(model: model, items: [r]) } else { RecordingReaderPanel(model: model, recording: r, focus: panel == .reader ? nil : panel) }
         }
         .onChange(of: live.text) { _, new in
             // A transcript landing from the transcriber (or a merge) replaces what's shown,
@@ -50,45 +41,34 @@ struct TranscriptView: View {
             if new != text, !editing || text == recording.text { text = new }
         }
         .onChange(of: text) { _, new in model.library.setText(new, of: recording.id) }
-        .onChange(of: model.askDraftRequests) { _, _ in if model.askDraftTarget == recording.id { showReader = true; side = "reader" } }
-        .onAppear { if model.askDraftTarget == recording.id, model.askDraftRequests > 0 { showReader = true; side = "reader" } }
+        // "Ask the reader about it": the conversation beside this text, its field focused.
+        .onChange(of: model.askDraftRequests) { _, _ in if model.askDraftTarget == recording.id { side = SidePanel.ask.rawValue } }
+        .onAppear { if model.askDraftTarget == recording.id, model.askDraftRequests > 0 { side = SidePanel.ask.rawValue } }
         .onDisappear { model.library.saveNow() }
     }
 
     @ViewBuilder
-    private var panel: some View {
-        if side == "words" { WordsPanel(model: model, items: [live]) } else { RecordingReaderPanel(model: model, recording: live) }
-    }
-
-    private var transcript: some View {
-        let r = live
-        return VStack(spacing: 0) {
-            header(r)
-            Divider()
-            if r.status == .failed, let failure = r.failure {
-                HStack(spacing: 10) {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                    Text(failure).font(.system(size: 12)).lineLimit(2)
-                    Spacer()
-                    Button("Retry") { model.library.retranscribe(r.id) }.disabled(!r.hasAudio)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 8)
-                .background(.orange.opacity(0.08))
+    private func content(_ r: Recording) -> some View {
+        if r.status == .failed, let failure = r.failure {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Text(failure).font(.system(size: 12)).lineLimit(2)
+                Spacer()
+                Button("Retry") { model.library.retranscribe(r.id) }.disabled(!r.hasAudio)
             }
-            if r.status == .transcribing && r.text.isEmpty {
-                TranscribingBoard(model: model, recording: r)
-            } else if isPlayingThis, !r.segments.isEmpty, !editing {
-                PlaybackText(recording: r, time: model.player.time) { t in
-                    if let audioURL { model.player.play(audioURL, id: r.id, from: t) }
-                }
-            } else {
-                editor(r)
-            }
-            Divider()
-            footer(r)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 8)
+            .background(.orange.opacity(0.08))
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        if r.status == .transcribing && r.text.isEmpty {
+            TranscribingBoard(model: model, recording: r)
+        } else if isPlayingThis, !r.segments.isEmpty, !editing {
+            PlaybackText(recording: r, time: model.player.time) { t in
+                if let audioURL { model.player.play(audioURL, id: r.id, from: t) }
+            }
+        } else {
+            editor(r)
+        }
     }
 
     private func header(_ r: Recording) -> some View {
@@ -113,12 +93,12 @@ struct TranscriptView: View {
                     ForEach(ItemPresentation.originWords(of: r), id: \.self) { Text("· \($0)") }
                     if let language = r.language, let name = Locale.current.localizedString(forLanguageCode: language) { Text("· \(name)") }
                     if let edited = ItemPresentation.editedWord(of: r) { Text("· \(edited)") }
+                    if case let .questions(n) = model.reader.rowMark(for: r) { Text("· \(n) question\(n == 1 ? "" : "s") for you") }
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
             }
             .help(ItemPresentation.origin(of: r) ?? "")
-            Spacer()
             if isPlayingThis, model.player.duration > 0 {
                 Slider(value: Binding(get: { model.player.time }, set: { model.player.seek(to: $0) }), in: 0...model.player.duration)
                     .frame(width: 160)
@@ -126,28 +106,7 @@ struct TranscriptView: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
-            Picker("Beside", selection: Binding(get: { showReader ? side : "none" }, set: { v in if v == "none" { showReader = false } else { showReader = true; side = v } })) {
-                Label(readerLabel(r), systemImage: "eyeglasses").tag("reader")
-                Label("Words", systemImage: "textformat.abc").tag("words")
-                Label("Text only", systemImage: "rectangle").tag("none")
-            }
-            .pickerStyle(.segmented).labelsHidden().controlSize(.small).fixedSize()
-            .help("Beside the text: what the reader made of this item (its questions for you\(questionsNote(r)), what each lens noticed, asking about it), the words that carry its meaning (names, nouns, verbs, adjectives, adverbs), or nothing")
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-    }
-
-    /// ", 3 waiting" when the reader has questions about this recording; empty otherwise.
-    private func questionsNote(_ r: Recording) -> String {
-        if case let .questions(n) = model.reader.rowMark(for: r) { return ", \(n) waiting" }
-        return ""
-    }
-
-    /// "Reader", with the number of questions it has about this recording.
-    private func readerLabel(_ r: Recording) -> String {
-        if case let .questions(n) = model.reader.rowMark(for: r) { return "Reader · \(n)?" }
-        return "Reader"
     }
 
     private func editor(_ r: Recording) -> some View {
@@ -157,43 +116,30 @@ struct TranscriptView: View {
             .scrollContentBackground(.hidden)
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
-            .frame(maxWidth: 760)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .focused($editing)
             .opacity(r.status == .transcribing ? 0.7 : 1)
             .animation(.easeOut(duration: 0.3), value: r.status)
     }
 
+    @ViewBuilder
     private func footer(_ r: Recording) -> some View {
-        HStack(spacing: 10) {
-            Button {
-                model.library.copy(text)
-                copied = true
-                Task { try? await Task.sleep(for: .milliseconds(1200)); copied = false }
-            } label: {
-                Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-            }
-            .help("Copy the transcript (⌘C with the list focused, ⌘⌥C anywhere)")
-            Button {
-                // A new paragraph at the end, with the cursor there.
-                if !text.hasSuffix("\n\n") { text = text.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n" }
-                editing = true
-                NSApp.sendAction(#selector(NSTextView.moveToEndOfDocument(_:)), to: nil, from: nil)
-            } label: { Label("Append", systemImage: "text.append") }
-            .help("Add a paragraph at the end. Or hold ⌥ with the hotkey to add by voice.")
-            if r.hasAudio {
-                Button { model.library.retranscribe(r.id) } label: { Label("Re-transcribe", systemImage: "arrow.clockwise") }
-                    .disabled(r.status == .transcribing)
-                    .help("Run the transcriber again (after adding to the vocabulary, say). Your edits are kept.")
-            }
-            Spacer()
-            Button(role: .destructive) { model.library.delete([r.id]); model.selection = [] } label: { Label("Delete", systemImage: "trash") }
-                .help("Delete (⌫). Ten seconds to undo.")
+        CopyButton(text: text, help: "Copy the text (⌘C with the list focused, ⌘⌥C anywhere)") { model.library.copy($0) }
+        Button {
+            // A new paragraph at the end, with the cursor there.
+            if !text.hasSuffix("\n\n") { text = text.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n" }
+            editing = true
+            NSApp.sendAction(#selector(NSTextView.moveToEndOfDocument(_:)), to: nil, from: nil)
+        } label: { Label("Append", systemImage: "text.append") }
+        .help("Add a paragraph at the end. Or hold ⌥ with the hotkey to add by voice.")
+        if r.hasAudio {
+            Button { model.library.retranscribe(r.id) } label: { Label("Re-transcribe", systemImage: "arrow.clockwise") }
+                .disabled(r.status == .transcribing)
+                .help("Run the transcriber again (after adding to the vocabulary, say). Your edits are kept.")
         }
-        .labelStyle(.titleAndIcon)
-        .controlSize(.small)
-        .padding(.horizontal, 20)
-        .padding(.vertical, 10)
+        Spacer()
+        Button(role: .destructive) { model.library.delete([r.id]); model.selection = [] } label: { Label("Delete", systemImage: "trash") }
+            .help("Delete (⌫). Ten seconds to undo.")
     }
 }
 
