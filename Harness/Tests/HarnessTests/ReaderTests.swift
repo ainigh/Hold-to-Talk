@@ -80,6 +80,7 @@ final class ReaderTests: XCTestCase {
             XCTAssertEqual(word, "the move"); XCTAssertEqual(offset, 12); XCTAssertEqual(why, "where it starts")
         } else { XCTFail() }
         if case let .find(word, offset, _) = LensParse.action("Find: “Lisbon”") { XCTAssertEqual(word, "Lisbon"); XCTAssertEqual(offset, 0) } else { XCTFail() }
+        if case let .similar(phrase, offset, _) = LensParse.action("SIMILAR feeling unsure about the house offset 5") { XCTAssertEqual(phrase, "feeling unsure about the house"); XCTAssertEqual(offset, 5) } else { XCTFail() }
         if case .none = LensParse.action("  \n") {} else { XCTFail() }
         // "opened" is not OPEN.
         if case .answer = LensParse.action("opened the file") {} else { XCTFail() }
@@ -385,6 +386,13 @@ final class ReaderTests: XCTestCase {
         XCTAssertEqual(Asking.find("Plan.", in: s, offset: 0, budget: 1000, tokens: t).ids, ["s00001", "s00003"])
         XCTAssertTrue(Asking.find("plan", in: s, offset: 2, budget: 1000, tokens: t).text.hasPrefix("No more matches"))
         XCTAssertEqual(Asking.find("plans  change", in: s, offset: 0, budget: 1000, tokens: t).ids, ["s00003"])
+        let byId = Dictionary(uniqueKeysWithValues: s.map { ($0.id, $0.text) })
+        let page = Asking.similarPage("doubt", hits: [(3, 0.81), (1, 0.4)], sentences: byId, offset: 0, budget: 1000, tokens: t)
+        XCTAssertEqual(page.ids, ["s00003", "s00001"])
+        XCTAssertTrue(page.text.hasPrefix("s00003\tPlans change, planning doesn't.\t(0.81)"))
+        XCTAssertTrue(Asking.similarPage("doubt", hits: [], sentences: byId, offset: 0, budget: 1000, tokens: t).text.hasPrefix("Nothing in the stream"))
+        XCTAssertTrue(Asking.system(goals: "", toc: "", corrections: "", similar: true).contains("SIMILAR <a few words"))
+        XCTAssertFalse(Asking.system(goals: "", toc: "", corrections: "", similar: false).contains("SIMILAR"))
     }
 }
 

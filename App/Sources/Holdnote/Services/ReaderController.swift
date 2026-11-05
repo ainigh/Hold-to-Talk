@@ -148,6 +148,8 @@ final class ReaderController {
     @ObservationIgnored var isWindowKey: () -> Bool = { false }
     /// The words the stream uses most, one per line (word · kind · times), for the asking prompt.
     @ObservationIgnored var wordsSummary: () -> String = { "" }
+    /// The sentences as vectors, for the SIMILAR move.
+    let indexer = EmbeddingIndexer()
 
     init() {
         let d = UserDefaults.standard
@@ -237,6 +239,7 @@ final class ReaderController {
         }
         chat = folder.map(ReaderStream.loadChat) ?? []
         currentFile = nil; fileBody = ""; loadedBody = ""
+        indexer.reset()
         refreshStream()
         refreshFiles()
     }
@@ -332,6 +335,7 @@ final class ReaderController {
         }
         sentencesCache = nil
         stream = ReaderStream.state(in: folder, config: config, lenses: lenses, goals: goals)
+        indexer.schedule(folder: folder, sentences: sentences, base: config.base, model: config.embedModel)
         additions = ReaderStream.additions(in: folder)
         spans = ReaderStream.spans(in: folder)
         fed = ReaderStream.sources(in: folder)
@@ -678,7 +682,8 @@ final class ReaderController {
 
     /// The files the reader writes; a reset moves only these, so a folder of your own keeps its other files.
     static let readerFiles = ["sentences.txt", "stream.txt", "additions.json", "sources.json", "goals.md", "lenses", "answers.md",
-                              "questions.md", "pinned.json", "index.md", "corrections.md", "chat.json", "progress.json", "log.jsonl"]
+                              "questions.md", "pinned.json", "index.md", "corrections.md", "chat.json", "progress.json", "log.jsonl",
+                              VectorStore.file, VectorStore.meta]
 
     /// The reader starts from nothing: its files go to the Trash in one folder, and the goals,
     /// the conversation and what it was doing are forgotten. Lenses and settings stay. Call it
@@ -698,6 +703,7 @@ final class ReaderController {
         sentencesCache = nil
         currentFile = nil; fileBody = ""; loadedBody = ""
         newQuestionsForYou = 0
+        indexer.reset()
         addLog("started over: the reader's notes went to the Trash")
         refreshStream()
         refreshFiles()
@@ -763,6 +769,7 @@ final class ReaderController {
         guard !q.isEmpty, !asking, let folder else { return }
         if config.model.isEmpty { addLog("No model selected. Is Ollama running?"); return }
         var opts = Asking.Options()
+        let cfgBase = config.base
         var label: String?
         if let r, case let .inStream(ids, _) = standing(of: r) {
             label = "your recording of \(r.createdAt.formatted(date: .abbreviated, time: .shortened))"
@@ -770,6 +777,13 @@ final class ReaderController {
             opts.focus = ids.map(Sentences.makeId)
         }
         opts.words = wordsSummary()
+        if indexer.available {
+            let indexer = self.indexer, base = cfgBase, embedModel = config.embedModel, byId = Dictionary(sentences.map { ($0.id, $0.text) }, uniquingKeysWith: { a, _ in a })
+            let budget = config.clamped().pageTokens, tokens = self.tokens
+            opts.similar = { phrase, offset in
+                try await indexer.similar(phrase, offset: offset, base: base, model: embedModel, sentences: byId, budget: budget, tokens: tokens)
+            }
+        }
         asking = true; askStep = "reading the notes"; askLive = ""
         let turn = ReaderStream.Turn(q: q, about: r?.id.uuidString, aboutLabel: label)
         chat.append(turn)

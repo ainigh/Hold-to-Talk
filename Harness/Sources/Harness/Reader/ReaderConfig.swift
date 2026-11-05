@@ -34,6 +34,8 @@ public struct ReaderConfig: Codable, Equatable, Sendable {
     public var autoRead = true
     /// A question's answer is refreshed once the stream has grown by this many sentences since.
     public var questionRefresh = 60
+    /// The embedding model for the SIMILAR move (an Ollama model; "" turns it off).
+    public var embedModel = "nomic-embed-text"
 
     public init() {}
 
@@ -62,6 +64,7 @@ public struct ReaderConfig: Codable, Equatable, Sendable {
         d.settleSeconds = try c.decodeIfPresent(Int.self, forKey: .settleSeconds) ?? d.settleSeconds
         d.autoRead = try c.decodeIfPresent(Bool.self, forKey: .autoRead) ?? d.autoRead
         d.questionRefresh = try c.decodeIfPresent(Int.self, forKey: .questionRefresh) ?? d.questionRefresh
+        d.embedModel = try c.decodeIfPresent(String.self, forKey: .embedModel) ?? d.embedModel
         self = d.clamped()
     }
 

@@ -1,7 +1,8 @@
 import Foundation
 
 /// Asking: one question answered with three moves, open a note file (one page at a time), read
-/// sentences by id, or find the sentences a word appears in (a page at a time). The model
+/// sentences by id, or find the sentences a word appears in (a page at a time), and a fourth
+/// when an embedding model is there: the sentences nearest in meaning to a phrase. The model
 /// replies in plain lines; `LensParse.action` reads them.
 public enum Asking {
     public struct TraceStep: Codable, Equatable, Sendable {
@@ -37,13 +38,24 @@ public enum Asking {
         /// The words the stream uses most (one per line: word, kind, times), for context and as
         /// things worth a FIND. Empty for none.
         public var words = ""
+        /// The SIMILAR move: given a phrase and an offset, the page of nearest sentences and the
+        /// ids on it. Nil when there is no embedding model; the prompt then does not offer it.
+        public var similar: (@Sendable (String, Int) async throws -> (text: String, ids: [String]))?
         public init() {}
     }
 
-    public static func system(goals: String, toc: String, corrections: String, words: String = "") -> String {
+    public static func system(goals: String, toc: String, corrections: String, words: String = "", similar: Bool = false) -> String {
         let id42 = Sentences.makeId(42), id43 = Sentences.makeId(43)
+        let similarBlock = similar ? """
+
+        SIMILAR <a few words that say what you are looking for> offset <match number, 0 to start>
+        WHY: one line on what you are looking for
+        (for example: SIMILAR feeling stuck before a decision offset 0)
+
+        """ : ""
+        let similarRule = similar ? "\nFIND or SIMILAR: FIND when the question names a thing or a word; SIMILAR when it names a feeling, a theme or a situation. SIMILAR returns the sentences nearest in meaning to your phrase, best first, a page at a time, with ids.\n" : ""
         var s = """
-        You answer questions about the author's own stream of thoughts, spoken and written. The stream has been read through several lenses and notes were written into files; every note line cites sentence ids like \(id42). You cannot see the stream directly, but you can search it for a word. \(Reading.transcriptNote)
+        You answer questions about the author's own stream of thoughts, spoken and written. The stream has been read through several lenses and notes were written into files; every note line cites sentence ids like \(id42). You cannot see the stream directly, but you can search it for a word\(similar ? " or for a meaning" : ""). \(Reading.transcriptNote)
 
         Each turn, reply with exactly ONE action, in this plain format and nothing else:
 
@@ -55,12 +67,12 @@ public enum Asking {
 
         FIND <a word or short phrase, as the author would have said it> offset <match number, 0 to start>
         WHY: one line on what you are looking for
-
+        \(similarBlock)
         ANSWER
         Your answer, in prose, as many lines as you need.
         EVIDENCE: \(id42), \(id43)
 
-        Rules. Start by opening the file most likely to hold the answer (the list below says what each file is for), or by FIND when the question names a thing: FIND returns every sentence the word appears in, with its id, a page at a time. Before answering, READ or FIND the raw sentences you intend to cite; cite only ids you have seen in a READ or FIND result. When asked how the author felt, quote their words rather than paraphrasing. For "is X present" or "what things are there" questions, check the ledger or FIND the word, and say which files you checked when something is absent. Say plainly what you are unsure of. Answer in the second person ("you"), as a thoughtful reader of the author's notes, not as a search engine. Do not ask the author questions back; answer with what you have. Never wrap the reply in JSON or code fences.
+        Rules. Start by opening the file most likely to hold the answer (the list below says what each file is for), or by FIND when the question names a thing: FIND returns every sentence the word appears in, with its id, a page at a time. Before answering, READ or FIND\(similar ? " or SIMILAR" : "") the raw sentences you intend to cite; cite only ids you have seen in a result.\(similarRule) When asked how the author felt, quote their words rather than paraphrasing. For "is X present" or "what things are there" questions, check the ledger or FIND the word, and say which files you checked when something is absent. Say plainly what you are unsure of. Answer in the second person ("you"), as a thoughtful reader of the author's notes, not as a search engine. Do not ask the author questions back; answer with what you have. Never wrap the reply in JSON or code fences.
 
         ## The author's goals
         \(goals)
@@ -96,6 +108,28 @@ public enum Asking {
             ? "\n[matches \(start)–\(end - 1) of \(matches.count) for “\(word)”; to continue, FIND the same word offset \(end)]"
             : "\n[matches \(start)–\(end - 1) of \(matches.count) for “\(word)”; that is all of them]"
         return (lines.joined(separator: "\n") + footer, matches[start..<end].map(\.id))
+    }
+
+    /// One page of SIMILAR hits (best first), from the `offset`th on, within `budget` tokens:
+    /// `id<TAB>text` lines with the similarity, and a footer like FIND's.
+    public static func similarPage(_ phrase: String, hits: [(n: Int, score: Float)], sentences byId: [String: String], offset: Int, budget: Int, tokens: TokenEstimator) -> (text: String, ids: [String]) {
+        guard !hits.isEmpty else { return ("Nothing in the stream is close to “\(phrase)”.", []) }
+        guard offset < hits.count else { return ("No more matches for “\(phrase)”: \(hits.count) in all, offsets 0–\(hits.count - 1).", []) }
+        let start = max(0, offset)
+        var used = 0, end = start
+        var lines: [String] = []
+        var ids: [String] = []
+        while end < hits.count {
+            let id = Sentences.makeId(hits[end].n)
+            let line = "\(id)\t\(byId[id] ?? "(no such sentence)")\t(\(String(format: "%.2f", hits[end].score)))"
+            let t = tokens.estimate(line) + 1
+            if used + t > budget, end > start { break }
+            lines.append(line); ids.append(id); used += t; end += 1
+        }
+        let footer = end < hits.count
+            ? "\n[matches \(start)–\(end - 1) of \(hits.count) nearest to “\(phrase)”, best first; to continue, SIMILAR the same phrase offset \(end)]"
+            : "\n[matches \(start)–\(end - 1) of \(hits.count) nearest to “\(phrase)”; that is all of them]"
+        return (lines.joined(separator: "\n") + footer, ids)
     }
 
     /// Lowercased, apostrophes straightened, runs of whitespace one space, and (for the needle)
@@ -152,7 +186,7 @@ public enum Asking {
         let byId = Dictionary(sentences.map { ($0.id, $0.text) }, uniquingKeysWith: { a, _ in a })
         let tocLines = tableOfContents(folder: folder, lenses: lenses, includeQuestions: options.includeQuestions)
         let system = Self.system(goals: goals, toc: tocLines.isEmpty ? "(no note files yet; nothing has been read)" : tocLines.joined(separator: "\n"),
-                                 corrections: tokens.clip(corrections, 600).text, words: tokens.clip(options.words, 500).text)
+                                 corrections: tokens.clip(corrections, 600).text, words: tokens.clip(options.words, 500).text, similar: options.similar != nil)
         var steps: [(action: String, result: String)] = []
         var trace: [TraceStep] = []
         var opened: [String] = []
@@ -191,6 +225,7 @@ public enum Asking {
             case let .open(file, offset, why): trace.append(TraceStep(action: "open", file: file, offset: offset, ids: [], why: why))
             case let .read(ids, why): trace.append(TraceStep(action: "read", file: "", offset: 0, ids: ids, why: why))
             case let .find(word, offset, why): trace.append(TraceStep(action: "find", file: word, offset: offset, ids: [], why: why))
+            case let .similar(phrase, offset, why): trace.append(TraceStep(action: "similar", file: phrase, offset: offset, ids: [], why: why))
             case let .answer(_, _, why, _): trace.append(TraceStep(action: "answer", file: "", offset: 0, ids: [], why: why))
             case let .none(why): trace.append(TraceStep(action: "none", file: "", offset: 0, ids: [], why: why))
             }
@@ -241,6 +276,21 @@ public enum Asking {
                 let found = find(word, in: sentences, offset: offset, budget: config.pageTokens, tokens: tokens)
                 for id in found.ids { evidenceRead.insert(id) }
                 steps.append(("FIND \(word) offset \(offset)", found.text))
+            case let .similar(phrase, offset, _):
+                options.onStep?("looking for what is like “\(phrase)”\(offset > 0 ? " from match \(offset)" : "")")
+                if let similar = options.similar {
+                    do {
+                        let page = try await similar(phrase, offset)
+                        for id in page.ids { evidenceRead.insert(id) }
+                        steps.append(("SIMILAR \(phrase) offset \(offset)", page.text))
+                    } catch {
+                        if error is CancellationError || (error as? ReaderError)?.cancelled == true { throw error }
+                        options.log?("similar failed: \(error.localizedDescription)")
+                        steps.append(("SIMILAR \(phrase) offset \(offset)", "SIMILAR could not run (\((error as? ReaderError)?.message ?? error.localizedDescription)). Use FIND or OPEN instead."))
+                    }
+                } else {
+                    steps.append(("SIMILAR \(phrase) offset \(offset)", "SIMILAR is not available (no embedding model). Use FIND for a word, or OPEN a file."))
+                }
             default: break
             }
         }

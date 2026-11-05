@@ -33,7 +33,7 @@ The expensive reading is done in small pieces as you talk, in the background, in
 - It reads whenever there is something new, never while you record or transcribe (whisper and the model share the Mac). What you say becomes notes within minutes. A lens switched on later reads alone from the start until it reaches the others, then they read together.
 - One lens asks *you* questions: who a name is, what happened next, what a vague reference points to. They wait under **For you**, and beside the recording they came from. Answer by voice (click Answer by voice, hold the hotkey, say it) or by typing; each answer joins the stream and is read like everything else. When the text answers one later, the lens marks it settled.
 - Once everything is read, the reader writes questions from your goals and answers them from the notes; you can pin your own. Each answer is refreshed once you have said enough more. These are a first place to look, and a check on whether the notes can answer what you care about.
-- To answer, the model has exactly three moves: open a note file (one page at a time), read sentences by id, or find every sentence a word appears in (a page at a time; "plan" finds "plans" and "planning", not "airplane"). It must have read or found the sentences it cites. There are no other tools. Every cited id leads back to your words and the recording they were said in. It is also given the forty words the stream uses most (word, kind, times), as context and as things worth finding.
+- To answer, the model has three moves: open a note file (one page at a time), read sentences by id, or find every sentence a word appears in (a page at a time; "plan" finds "plans" and "planning", not "airplane"), and a fourth when an embedding model is set (Settings → Reader): **similar**, the sentences nearest in meaning to a phrase, best first, a page at a time, for questions that name a feeling or a theme rather than a word. Every sentence is embedded once as it joins the stream (ids never change, so the store only grows) into `vectors.bin`; without the model nothing is offered and nothing else changes. It must have read, found or been shown the sentences it cites. There are no other tools. Every cited id leads back to your words and the recording they were said in. It is also given the forty words the stream uses most (word, kind, times), as context and as things worth finding.
 - Every prompt says the text is a machine transcript of speech, typed text included, so a mis-heard word is read for what was meant and named as a likely error rather than built on.
 - Corrections are a file. When you flag an answer, a line goes into `corrections.md`, which is read before every answer. You can also just edit any note file.
 
@@ -83,6 +83,7 @@ The folder is `~/Library/Application Support/Holdnote/Reader/` unless you choose
 | `chat.json` | The conversation |
 | `progress.json` | How far each lens has read, its notebook and entries, and the questions' answers; Clear progress on the Reading view starts over |
 | `log.jsonl` | One line per model call: tokens, time, lenses, errors |
+| `vectors.bin`, `vectors.json` | One vector per sentence for the similar move, append-only, with the embedding model's name and dimension; a store made by another model is not reused |
 
 ## Budgets
 
@@ -111,7 +112,7 @@ A rest (default 20 seconds) is taken after every call while reading, so a larger
 
 ## Setup
 
-1. Install Ollama and pull a model, e.g. `ollama pull llama3.1:8b`. Start it (the menu bar app, or `ollama serve`). A native app needs no `OLLAMA_ORIGINS`.
+1. Install Ollama and pull a model, e.g. `ollama pull llama3.1:8b`. Start it (the menu bar app, or `ollama serve`). A native app needs no `OLLAMA_ORIGINS`. For finding by meaning, also `ollama pull nomic-embed-text`.
 2. Open Status (⌘2). Getting started at the top of Now says what is still missing.
 3. Add something to the stream: hold the hotkey and talk, drop an audio or text file on the window, or paste text. Write your goals (the Goals row above ALL) if you have some. Pick the model in Settings → Reader.
 4. That's all: it reads by itself. Ask beside ALL or beside an item, answer its questions under For you or beside the item, click any sentence id to see your words and open the recording. Flag what is wrong.
