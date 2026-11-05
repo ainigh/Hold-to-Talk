@@ -44,6 +44,9 @@ struct MainWindow: View {
                 .toggleStyle(.button)
                 .tint(model.capture.isSpeaking ? .red : .accentColor)
                 .help("Record by itself whenever you speak; each stretch of speech becomes a recording (⌘⇧L). The menu bar icon pulses while it's on.")
+                Button { confirmResetEverything(model) } label: { Label("Reset All", systemImage: "arrow.counterclockwise.circle") }
+                    .disabled(model.capture.isRecording)
+                    .help("Start from scratch: every recording and its audio, and the reader's notes, goals and questions, go to the Trash in one dated folder. Asks first. The speech model, permissions and settings stay.")
             }
             ToolbarItem(placement: .principal) {
                 ActivityStatus(model: model)
