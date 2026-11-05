@@ -21,9 +21,10 @@ struct HoldnoteApp: App {
             }
             CommandMenu("Recording") {
                 Button(model.capture.isListening ? "Stop Voice Detection" : "Start Voice Detection") { model.listening.toggle() }.keyboardShortcut("l", modifiers: [.command, .shift])
-                Button("New Note from Clipboard") { model.pasteText() }.keyboardShortcut("v", modifiers: [.command, .shift])
-                Button("Import Audio or Text Files…") { model.importFiles() }.keyboardShortcut("i", modifiers: [.command, .shift])
-                Button(model.showingAll ? "Show One Recording" : "Show All Text") { model.showingAll.toggle(); model.showWindow() }.keyboardShortcut("a", modifiers: [.command, .shift])
+                Button("Add the Clipboard to the Stream") { model.pasteText() }.keyboardShortcut("v", modifiers: [.command, .shift])
+                Button("Add Audio or Text Files to the Stream…") { model.importFiles() }.keyboardShortcut("i", modifiers: [.command, .shift])
+                Button("Show the Whole Stream") { model.showWholeStream() }.keyboardShortcut("a", modifiers: [.command, .shift])
+                Button("Stop Transcribing") { model.library.cancelTranscription() }.disabled(model.library.transcribing == nil)
                 Divider()
                 Button("Copy All") { model.copyAll() }.keyboardShortcut("c", modifiers: [.command, .shift])
                 Button("Copy Transcript") { model.copySelected() }.keyboardShortcut("c", modifiers: [.command, .option])
@@ -56,19 +57,20 @@ struct HoldnoteApp: App {
                         .keyboardShortcut("r", modifiers: [.command, .option])
                 }
                 Toggle("Read by Itself", isOn: Binding(get: { model.reader.config.autoRead }, set: { model.reader.config.autoRead = $0; if $0 { model.reader.resumeAuto() } }))
-                Button("Add Transcripts to the Stream Now") { _ = model.reader.feedTranscripts() }
+                Button("Give the Reader What's New Now") { _ = model.reader.feedTranscripts() }
                 Divider()
                 Button("Show Reader Folder in Finder") { model.reader.showFolderInFinder() }
                 Button("Reset the Reader…") { confirmResetReader(model) }
                 Button("About the Reader") { model.showReaderAbout() }
             }
             CommandGroup(after: .toolbar) {
-                Button("Recordings") { model.show(.recordings) }.keyboardShortcut("1", modifiers: .command)
+                Button("Stream") { model.show(.recordings) }.keyboardShortcut("1", modifiers: .command)
                 Button("Ask") { model.showReader(.ask) }.keyboardShortcut("2", modifiers: .command)
-                Button("Questions for You") { model.showReader(.forYou) }.keyboardShortcut("3", modifiers: .command)
+                Button("For You") { model.showReader(.forYou) }.keyboardShortcut("3", modifiers: .command)
+                Divider()
                 Button("Reading") { model.showReader(.reading) }.keyboardShortcut("4", modifiers: .command)
-                Button("Stream") { model.showReader(.stream) }.keyboardShortcut("5", modifiers: .command)
-                Button("Notes") { model.showReader(.notes) }.keyboardShortcut("6", modifiers: .command)
+                Button("Notes") { model.showReader(.notes) }.keyboardShortcut("5", modifiers: .command)
+                Button("Guide") { model.showReaderAbout() }
                 Divider()
                 Button("Setup") { model.showSetup() }
             }
@@ -143,10 +145,13 @@ final class AppModel {
     /// The window's selection (ids), shared with the menus and ⌥+hotkey.
     var selection: Set<UUID> = []
     var searchText = ""
-    /// The right pane shows every listed transcript as one continuous text.
+    /// The right pane shows the whole stream as one continuous text (also when nothing is selected).
     var showingAll = false {
         didSet { if showingAll { section = .recordings } }
     }
+    /// A passage picked in the stream to ask about: the Ask view takes it into its field.
+    var askDraft = ""
+    var askDraftRequests = 0
     /// Bumped to put the cursor in the search field.
     var searchRequests = 0
     @ObservationIgnored private var statusBar: StatusBarController?
@@ -301,6 +306,29 @@ final class AppModel {
     /// The window, on the reader view asked for (or the one it was last on).
     func showReader(_ view: ReaderView? = nil) {
         show(.reader(view ?? readerView))
+    }
+
+    /// The whole stream as one text, in the Stream section.
+    func showWholeStream() {
+        selection = []
+        showingAll = true
+        showWindow()
+    }
+
+    /// Ask, with a passage of the stream quoted in the field, to finish the question after it.
+    func askAbout(_ passage: String) {
+        var excerpt = passage.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ")
+        if excerpt.count > 600 { excerpt = String(excerpt.prefix(600)).trimmingCharacters(in: .whitespaces) + "…" }
+        askDraft = "About this passage: “\(excerpt)”\n\n"
+        askDraftRequests += 1
+        showReader(.ask)
+    }
+
+    /// Ask, about one item in the stream, by its first words.
+    func askAbout(_ r: Recording) {
+        askDraft = "About my \(r.audioFile != nil ? "recording" : "note") of \(r.createdAt.formatted(date: .abbreviated, time: .shortened)) (“\(r.title)”): "
+        askDraftRequests += 1
+        showReader(.ask)
     }
 
     /// A recording in the list, selected and shown (from a sentence id, a question, the stream).

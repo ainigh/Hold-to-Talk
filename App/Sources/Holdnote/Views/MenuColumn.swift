@@ -2,10 +2,10 @@ import AppKit
 import Harness
 import SwiftUI
 
-/// The window's first column: everything Holdnote has, one row each. Choosing a row opens the
-/// columns it needs to the right. Under the rows, what the menu bar menu used to hold: voice
-/// detection, the hotkey, the microphone, a recording in progress, what the reader is doing,
-/// updates, and Quit.
+/// The window's first column. Three things you use: the Stream (everything you add, each item
+/// text), Ask (a conversation about it) and For you (what the reader needs you to tell it).
+/// Under the hood, how the reading works: Reading, Notes, the Guide. Then Settings and Setup.
+/// At the bottom, the recording controls that used to be the menu bar menu, and updates.
 struct MenuColumn: View {
     @Bindable var model: AppModel
 
@@ -14,9 +14,12 @@ struct MenuColumn: View {
     var body: some View {
         VStack(spacing: 0) {
             List(selection: selection) {
-                Section("Holdnote") {
-                    row("Recordings", symbol: "waveform", meta: model.library.recordings.isEmpty ? "" : model.library.recordings.count.formatted())
+                Section {
+                    row("Stream", symbol: "text.alignleft", meta: model.library.recordings.isEmpty ? "" : model.library.recordings.count.formatted())
                         .tag(Item.recordings)
+                    ForEach(ReaderView.allCases.filter(\.isMain)) { v in
+                        row(v.title, symbol: v.symbol, meta: meta(v), attention: attention(v)).tag(Item.reader(v))
+                    }
                 }
                 if let gap = reader.voiceAnswer {
                     Section {
@@ -31,13 +34,13 @@ struct MenuColumn: View {
                         .buttonStyle(.plain)
                     }
                 }
-                Section("Reader") {
-                    ForEach(ReaderView.allCases) { v in
+                Section("Under the hood") {
+                    ForEach(ReaderView.allCases.filter { !$0.isMain }) { v in
                         row(v.title, symbol: v.symbol, meta: meta(v), attention: attention(v)).tag(Item.reader(v))
                     }
                     row("Guide", symbol: "book", meta: "").tag(Item.readerGuide)
                 }
-                Section("App") {
+                Section {
                     row("Settings", symbol: "gearshape", meta: "").tag(Item.settings)
                     row("Setup", symbol: model.capture.hotkeyRunning ? "checklist" : "exclamationmark.triangle",
                         meta: model.capture.hotkeyRunning ? "" : "hotkey off", attention: !model.capture.hotkeyRunning).tag(Item.setup)
@@ -83,7 +86,7 @@ struct MenuColumn: View {
         }
     }
 
-    // MARK: - What the menu bar menu held
+    // MARK: - Recording, reading, updates
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -94,23 +97,39 @@ struct MenuColumn: View {
                 .buttonStyle(.plain)
                 .help("Stop the recording in progress (⌘.)")
             }
+            Toggle(isOn: Binding(get: { !model.capture.paused }, set: { model.capture.paused = !$0 })) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Hold \(model.settings.settings.hotkey.glyph) to talk").font(.system(size: 12))
+                    if model.capture.paused { Text("Paused").font(.system(size: 10)).foregroundStyle(.secondary) }
+                }
+            }
+            .toggleStyle(.switch).controlSize(.mini)
+            .help(model.capture.paused ? "The hotkey is paused; turn on to record with it again" : "Hold the key anywhere to record; turn off to pause it")
             Toggle(isOn: $model.listening) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Voice Detection").font(.system(size: 12))
+                    Text("Voice detection").font(.system(size: 12))
                     if model.capture.isListening {
-                        Text(model.capture.isSpeaking ? "Hearing speech…" : "Listening; recordings start when you speak")
+                        Text(model.capture.isSpeaking ? "Hearing speech…" : "Recording starts when you speak")
                             .font(.system(size: 10)).foregroundStyle(model.capture.isSpeaking ? Color.red : .secondary)
                     }
                 }
             }
             .toggleStyle(.switch).controlSize(.mini)
             .help("Record by itself whenever you speak (⌘⇧L)")
-            Toggle(isOn: Binding(get: { !model.capture.paused }, set: { model.capture.paused = !$0 })) {
-                Text("Hotkey (\(model.settings.settings.hotkey.glyph))").font(.system(size: 12))
+            if let id = model.library.transcribing, let r = model.library.recording(id) {
+                Button { model.openRecording(id) } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "waveform.badge.magnifyingglass").foregroundStyle(Color.accentColor)
+                            Text("Transcribing \(r.audioFile != nil && r.duration > 0 ? TranscriptText.duration(r.duration) : "")\(model.library.transcribingNote.isEmpty ? "" : " · " + model.library.transcribingNote)")
+                                .font(.system(size: 11)).lineLimit(2)
+                        }
+                        ProgressView(value: model.library.transcribingProgress).controlSize(.small)
+                    }
+                }
+                .buttonStyle(.plain)
+                .help("Open it")
             }
-            .toggleStyle(.switch).controlSize(.mini)
-            .help(model.capture.paused ? "The hotkey is paused; turn on to record with it again" : "Hold the key to record; turn off to pause it")
-            MicrophonePicker(model: model)
             if reader.running {
                 Button { model.showReader(.reading) } label: {
                     VStack(alignment: .leading, spacing: 4) {
@@ -124,7 +143,6 @@ struct MenuColumn: View {
                 .buttonStyle(.plain)
                 .help("Open the Reading view")
             }
-            if isReaderSection { readerLines }
             Divider()
             HStack(spacing: 6) {
                 UpdateStatus(updater: model.updater).buttonStyle(.borderless).controlSize(.small).labelStyle(.iconOnly)
@@ -139,80 +157,25 @@ struct MenuColumn: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var isReaderSection: Bool {
-        switch model.section {
-        case .reader, .readerGuide: true
-        default: false
-        }
-    }
-
-    /// The notes folder and the Ollama connection, while a reader view shows.
-    private var readerLines: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button { reader.chooseFolder() } label: {
-                Label {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Folder").font(.system(size: 10)).foregroundStyle(.secondary)
-                        Text(reader.folder.map { $0.name + "/" } ?? "Choose a folder").font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
-                    }
-                } icon: { Image(systemName: "folder") }
-            }
-            .buttonStyle(.plain)
-            .help(reader.folder.map { "Notes are written into \($0.root.path). Click to choose another folder." } ?? "Choose the folder the notes are written into")
-            Button { model.showSettings(tab: .reader); reader.refreshModels() } label: {
-                Label {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Ollama").font(.system(size: 10)).foregroundStyle(.secondary)
-                        Text(ollamaLine).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
-                    }
-                } icon: { Circle().fill(ollamaColor).frame(width: 8, height: 8) }
-            }
-            .buttonStyle(.plain)
-            .help(ollamaDetail)
-        }
-    }
-
     private var readingLine: String {
         if let c = reader.chunk { return "Reading \(c.from)–\(c.to)" }
         if let q = reader.questionInfo, !q.current.isEmpty { return "Answering \(q.done + 1) of \(q.total)" }
         return reader.status.isEmpty ? "Reading" : reader.status
     }
 
-    private var ollamaLine: String {
-        switch reader.ollama {
-        case .checking: "checking…"
-        case .ok: reader.config.model.isEmpty ? "no model" : reader.config.model
-        case .bad: "not connected"
-        }
-    }
-    private var ollamaDetail: String {
-        switch reader.ollama {
-        case .checking: "Checking Ollama…"
-        case let .ok(d), let .bad(d): d
-        }
-    }
-    private var ollamaColor: Color {
-        switch reader.ollama {
-        case .checking: .secondary
-        case .ok: .green
-        case .bad: .orange
-        }
-    }
-
     private func meta(_ v: ReaderView) -> String {
         switch v {
         case .ask:
             if reader.asking { return "asking…" }
-            let n = reader.questions.count
-            return n == 0 ? "" : "\(reader.questions.filter { reader.answers[$0] != nil }.count)/\(n)"
+            return reader.chat.isEmpty ? "" : reader.chat.count.formatted()
         case .forYou:
             let n = reader.gaps?.open.count ?? 0
             return n > 0 ? n.formatted() : ""
         case .reading:
             if reader.running { return "\(reader.percent)%" }
             if reader.stream.unread > 0 { return "\(reader.stream.unread.formatted()) unread" }
+            if let b = reader.blocker, b.step == "ollama" || b.step == "folder" { return "not ready" }
             return ""
-        case .stream: return reader.stream.count > 0 ? reader.stream.count.formatted() : ""
         case .notes: return reader.files.isEmpty ? "" : reader.files.count.formatted()
         }
     }
@@ -220,30 +183,9 @@ struct MenuColumn: View {
     private func attention(_ v: ReaderView) -> Bool {
         switch v {
         case .forYou: (reader.gaps?.open.isEmpty == false) || reader.voiceAnswer != nil
-        case .stream: reader.folder != nil && reader.stream.count == 0 && !reader.stream.rawPresent && reader.unfedCount == 0
-        case .reading: !reader.running && reader.stream.unread > 0 && reader.ollamaOK && !reader.config.autoRead
+        case .reading: (!reader.running && reader.stream.unread > 0 && reader.ollamaOK && !reader.config.autoRead) || (reader.blocker.map { $0.step == "ollama" || $0.step == "folder" } ?? false)
         default: false
         }
-    }
-}
-
-/// The microphone, as the menu bar menu offered it. The device list is read when the column
-/// appears and each time the picker is opened, not on every redraw (it asks Core Audio).
-struct MicrophonePicker: View {
-    let model: AppModel
-    @State private var devices: [AudioDevices.Device] = []
-
-    var body: some View {
-        Picker(selection: Binding(get: { model.settings.settings.inputDeviceID }, set: { model.setInputDevice($0) })) {
-            Text("System default").tag(String?.none)
-            ForEach(devices) { Text($0.name).tag(String?.some($0.uid)) }
-        } label: {
-            Image(systemName: "mic")
-        }
-        .pickerStyle(.menu).controlSize(.small)
-        .help("Microphone")
-        .onAppear { devices = AudioDevices.inputs() }
-        .onHover { if $0 { devices = AudioDevices.inputs() } }
     }
 }
 

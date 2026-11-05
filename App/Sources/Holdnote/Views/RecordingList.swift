@@ -3,9 +3,10 @@ import Harness
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The second column when Recordings is chosen: search, then the recordings and notes. Newest
-/// first in day sections, or in your own order, where rows drag up and down and files dropped
-/// between two rows land there.
+/// The second column when the Stream is chosen: search, then everything in it (recordings,
+/// imported audio, pasted and dropped text), each an item that is or becomes text. Newest first
+/// in day sections, or in your own order, where rows drag up and down and files dropped
+/// between two rows land there. Choose an item for its text; choose none for the whole stream.
 struct RecordingList: View {
     @Bindable var model: AppModel
     @FocusState private var searching: Bool
@@ -15,7 +16,10 @@ struct RecordingList: View {
     var body: some View {
         let listed = model.listed
         VStack(spacing: 0) {
-            ColumnHeader(title: "Recordings") {
+            ColumnHeader(title: "Stream") {
+                Button { model.showWholeStream() } label: { Image(systemName: "text.alignleft") }
+                    .buttonStyle(.borderless)
+                    .help("The whole stream as one text (⌘⇧A)")
                 Menu {
                     Picker("Order", selection: order) {
                         Text("Newest first, by day").tag(Settings.ListOrder.newestFirst)
@@ -27,13 +31,20 @@ struct RecordingList: View {
                 }
                 .menuStyle(.borderlessButton).fixedSize()
                 .help(custom ? "In your own order: drag rows to say what came from what. Click to sort by date instead." : "Newest first, by day. Click to arrange the list in your own order.")
-                Button { model.importFiles() } label: { Image(systemName: "plus") }
-                    .buttonStyle(.borderless)
-                    .help("Add audio or text files (⌘⇧I). Or drop them here.")
+                Menu {
+                    Button("Import audio or text files…") { model.importFiles() }
+                    Button("Paste the clipboard as a note") { model.pasteText() }
+                    Divider()
+                    Text("Or hold \(model.settings.settings.hotkey.glyph) and talk, or drop files or text anywhere on the window.")
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .menuStyle(.borderlessButton).fixedSize()
+                .help("Add to the stream: files (⌘⇧I), the clipboard (⌘⇧V), or your voice")
             }
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Search transcripts", text: $model.searchText)
+                TextField("Search the stream", text: $model.searchText)
                     .textFieldStyle(.plain)
                     .focused($searching)
                 if !model.searchText.isEmpty {
@@ -73,6 +84,8 @@ struct RecordingList: View {
                 model.togglePlayback()
                 return .handled
             }
+            // A chosen item shows its own text; none chosen, the whole stream.
+            .onChange(of: model.selection) { _, new in if !new.isEmpty { model.showingAll = false } }
             .overlay {
                 if listed.isEmpty {
                     Text(model.searchText.isEmpty ? "Nothing yet. Hold \(model.settings.settings.hotkey.glyph), or drop audio or text files here." : "Nothing matches")
@@ -99,7 +112,12 @@ struct RecordingList: View {
     @ViewBuilder
     private func rowMenu(_ r: Recording) -> some View {
         Button("Copy") { model.library.copy(r.text) }
-        Button("Re-transcribe") { model.library.retranscribe(r.id) }.disabled(r.audioFile == nil || r.status == .transcribing)
+        if r.status == .transcribing, model.library.transcribing == r.id {
+            Button("Stop transcribing") { model.library.cancelTranscription() }
+        } else {
+            Button("Re-transcribe") { model.library.retranscribe(r.id) }.disabled(r.audioFile == nil || r.status == .transcribing)
+        }
+        Button("Ask the reader about it") { model.askAbout(r) }.disabled(r.text.isEmpty)
         if r.audioFile != nil {
             Button("Delete audio, keep text") { model.library.deleteAudio(r.id) }
         }

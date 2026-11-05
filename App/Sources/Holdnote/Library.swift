@@ -17,6 +17,8 @@ final class Library {
     /// What the transcriber is at, for the transcript pane: reading the file, or which chunk
     /// of how many is done when the audio was split. Empty when there's nothing to add.
     private(set) var transcribingNote = ""
+    /// Stop was clicked; whisper is giving up at its next step.
+    private(set) var transcribingStopping = false
     /// Recordings deleted and still undoable, newest deletion last.
     private(set) var pendingDeletes: [Recording] = []
     @ObservationIgnored private var deleteTimer: Timer?
@@ -62,8 +64,8 @@ final class Library {
             try? store.save(r)
             enqueue(r.id)
         }
-        // Transcripts that never finished (the app quit) are run again.
-        for r in recordings where r.status == .failed && r.text.isEmpty && r.audioFile != nil {
+        // Transcripts that never finished (the app quit) are run again; one you stopped waits for Retry.
+        for r in recordings where r.status == .failed && r.text.isEmpty && r.audioFile != nil && r.failure != WhisperTranscriber.Problem.cancelled.errorDescription {
             retranscribe(r.id)
         }
     }
@@ -222,6 +224,21 @@ final class Library {
         enqueue(id)
     }
 
+    /// Stops the transcription in progress (Stop in the window). The recording is marked failed,
+    /// with its audio kept, so Retry runs it again; the rest of the queue carries on.
+    func cancelTranscription() {
+        guard transcribing != nil else { return }
+        transcribingStopping = true
+        transcribingNote = "Stopping…"
+        transcriber.cancel()
+    }
+
+    /// Takes a recording out of the queue, or stops it if it is the one being transcribed.
+    private func dequeue(_ id: UUID) {
+        queue.removeAll { $0.id == id }
+        if transcribing == id { transcriber.cancel() }
+    }
+
     private func enqueue(_ id: UUID, appendTo: UUID? = nil) {
         queue.append((id, appendTo))
         runQueue()
@@ -234,6 +251,8 @@ final class Library {
         transcribing = job.id
         transcribingProgress = 0
         transcribingNote = ""
+        transcribingStopping = false
+        transcriber.beginRun()
         let samples = samplesInMemory.removeValue(forKey: job.id)
         let audioURL = store.audioURL(for: r)
         let s = settings()
@@ -250,15 +269,16 @@ final class Library {
                 } else if let audioURL {
                     // An imported file can be long and in any format: decoding it is work of its own.
                     await MainActor.run { [weak self] in self?.transcribingNote = "Reading the file…" }
-                    audio = try AudioDecoder.pcm16k(audioURL)
+                    audio = try AudioDecoder.pcm16k(audioURL) { transcriber.isCancelled }
                     await MainActor.run { [weak self] in self?.transcribingNote = "" }
                 } else {
                     throw WhisperTranscriber.Problem("The audio was deleted; there's nothing to transcribe.")
                 }
                 outcome = .success(try transcriber.transcribe(audio, model: model, options: options) { p in
                     Task { @MainActor [weak self] in
-                        self?.transcribingProgress = p.fraction
-                        self?.transcribingNote = p.chunks > 1 ? "\(p.chunksDone) of \(p.chunks) chunks" : ""
+                        guard let self, !self.transcribingStopping else { return }
+                        self.transcribingProgress = p.fraction
+                        self.transcribingNote = p.chunks > 1 ? "\(p.chunksDone) of \(p.chunks) chunks" : ""
                     }
                 })
             } catch {
@@ -273,6 +293,7 @@ final class Library {
     private func finished(_ id: UUID, appendTo: UUID?, outcome: Swift.Result<WhisperTranscriber.Result, Error>, removeFillers: Bool) {
         transcribing = nil
         transcribingNote = ""
+        transcribingStopping = false
         defer { runQueue() }
         guard let i = index(id) else { return }
         switch outcome {
@@ -328,6 +349,7 @@ final class Library {
     func delete(_ ids: Set<UUID>) {
         let removed = recordings.filter { ids.contains($0.id) }
         guard !removed.isEmpty else { return }
+        for id in ids { dequeue(id) }
         recordings.removeAll { ids.contains($0.id) }
         pendingDeletes += removed
         deleteTimer?.invalidate()

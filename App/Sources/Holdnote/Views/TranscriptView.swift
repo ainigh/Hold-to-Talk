@@ -76,6 +76,12 @@ struct TranscriptView: View {
                     if model.library.transcribing == r.id, !model.library.transcribingNote.isEmpty {
                         Text(model.library.transcribingNote).font(.caption).foregroundStyle(.tertiary)
                     }
+                    if model.library.transcribing == r.id {
+                        Button("Stop") { model.library.cancelTranscription() }
+                            .controlSize(.small)
+                            .disabled(model.library.transcribingStopping)
+                            .help("Stop transcribing this one. The audio is kept; Retry runs it again.")
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if isPlayingThis, !r.segments.isEmpty, !editing {

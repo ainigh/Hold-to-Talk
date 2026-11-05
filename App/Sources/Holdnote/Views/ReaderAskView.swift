@@ -1,25 +1,155 @@
 import Harness
 import SwiftUI
 
-/// Ask: what you are trying to find out, the questions the reader keeps answered about it (from
-/// your goals, and any you pinned), and anything else you want to ask. The model can only open
-/// a note file or read sentences by number; every answer cites sentence ids, and each id leads
-/// back to your words and the recording they were said in. Flag anything wrong and it goes into
-/// corrections.md.
+/// Ask: a conversation about the stream. Your questions and the reader's answers, newest at
+/// the bottom, with the field under them. The model can only open a note file or read
+/// sentences by number; every answer cites sentence ids, and each id leads back to your words
+/// and the recording they were said in. Flag anything wrong and it goes into corrections.md.
+/// Your goals, and the questions the reader keeps answered about them, fold out at the top.
 struct ReaderAskView: View {
     let model: AppModel
     let go: (ReaderView) -> Void
+    @State private var question = ""
+    @State private var showGoals = false
+    @FocusState private var focused: Bool
+    @StateObject private var flash = FlashState()
 
     private var reader: ReaderController { model.reader }
 
     var body: some View {
-        ReaderPage(title: "Ask", lede: "What you want to find out, and what the reader has found. It reads everything you record a chunk at a time, through every lens at once, and keeps these answers up to date as you talk.") {
-            GettingStarted(model: model, go: go)
-            ReaderStatusStrip(model: model, go: go)
-            GoalsBlock(model: model)
-            KeptQuestions(model: model)
-            AskBlock(model: model)
+        VStack(spacing: 0) {
+            header
+            Divider()
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        GettingStarted(model: model, go: go)
+                        if showGoals {
+                            GoalsBlock(model: model)
+                            KeptQuestions(model: model)
+                            Divider()
+                        }
+                        if reader.chat.isEmpty { suggestions }
+                        ForEach(reader.chat) { turn in
+                            TurnView(model: model, turn: turn, pending: reader.asking && turn.id == reader.chat.last?.id) { msg in flash.show(msg) }
+                                .id(turn.id)
+                        }
+                        Color.clear.frame(height: 1).id("bottom")
+                    }
+                    .padding(20)
+                    .frame(maxWidth: 760, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
+                .onChange(of: reader.chat.count) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
+                .onChange(of: reader.askLive.count) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            Divider()
+            input
         }
+        .onAppear { takeDraft() }
+        .onChange(of: model.askDraftRequests) { _, _ in takeDraft() }
+    }
+
+    /// The title, what the reader is at, and the fold for goals and standing questions.
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Ask").font(.title3.weight(.semibold))
+                Text("about everything in the stream").font(.system(size: 12)).foregroundStyle(.secondary)
+                Spacer()
+                Flash(text: flash.text)
+                Toggle(isOn: $showGoals) {
+                    Label(goalsLabel, systemImage: "target")
+                }
+                .toggleStyle(.button).controlSize(.small)
+                .help("What you are trying to find out, and the questions the reader keeps answered about it as you say more")
+                if !reader.chat.isEmpty {
+                    Button {
+                        confirm("Clear this conversation?", detail: "Flags already written to corrections.md are kept.", button: "Clear") { reader.clearChat() }
+                    } label: { Image(systemName: "trash") }
+                    .buttonStyle(.borderless).controlSize(.small)
+                    .help("Clear the conversation")
+                }
+            }
+            ReaderStatusStrip(model: model, go: go)
+        }
+        .padding(.horizontal, 20).padding(.vertical, 12)
+    }
+
+    private var goalsLabel: String {
+        let n = reader.questions.count
+        if n == 0 { return reader.goals.trimmingCharacters(in: .whitespaces).isEmpty ? "Goals" : "Goals · no questions yet" }
+        return "Goals · \(reader.questions.filter { reader.answers[$0] != nil }.count)/\(n) answered"
+    }
+
+    static let suggestions = [
+        "What do I keep coming back to?",
+        "Where do I contradict myself?",
+        "What did I leave open and never come back to?",
+        "Where did I first sound unsure, and about what?",
+        "Which of my goals does my own writing argue against?",
+    ]
+
+    private var suggestions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Nothing asked yet.").font(.system(size: 13, weight: .medium))
+            Text("Ask anything about what you said and wrote. Answers cite sentence ids; click one to see your exact words and open the recording. Select any passage in the stream and right-click to ask about it.")
+                .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ForEach(Self.suggestions, id: \.self) { s in
+                Button(s) { reader.ask(s) }.buttonStyle(.link).font(.system(size: 13)).disabled(!canAsk)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(0.4)))
+    }
+
+    /// The field, pinned under the conversation.
+    private var input: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .bottom, spacing: 10) {
+                TextField("Ask anything about the stream… (↵ to ask, ⌥↵ for a new line)", text: $question, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...6)
+                    .focused($focused)
+                    .onSubmit { ask() }
+                Button(reader.asking ? "Cancel" : "Ask") { if reader.asking { reader.cancelAsk() } else { ask() } }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!reader.asking && (!canAsk || question.trimmingCharacters(in: .whitespaces).isEmpty))
+            }
+            Text(stateLine).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+        }
+        .padding(.horizontal, 20).padding(.vertical, 12)
+        .frame(maxWidth: 760, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var canAsk: Bool { reader.folder != nil && !reader.config.model.isEmpty && !reader.asking }
+
+    private var stateLine: String {
+        guard let folder = reader.folder else { return "Choose a folder for the notes first (Settings → Reader)." }
+        if reader.config.model.isEmpty { return "Pick a model in Settings → Reader." }
+        if reader.notesCount == 0 { return "No notes in \(folder.name)/ yet; until something is read, answers have little to go on." }
+        let n = reader.sentences.count
+        return "Answers from \(reader.notesCount) note file\(reader.notesCount == 1 ? "" : "s") and \(n.formatted()) sentences\(reader.stream.unread > 0 ? " · \(reader.stream.unread.formatted()) not read yet" : "") · the model only opens notes and reads sentences by id"
+    }
+
+    private func ask() {
+        let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty, canAsk else { return }
+        if reader.running { flash.show("Reading is running; this answer shares the model with it.") }
+        question = ""
+        reader.ask(q)
+    }
+
+    /// A passage picked in the stream ("Ask the reader about this…") lands in the field, to
+    /// finish the question after it.
+    private func takeDraft() {
+        guard !model.askDraft.isEmpty else { return }
+        question = model.askDraft
+        model.askDraft = ""
+        focused = true
     }
 }
 
@@ -41,11 +171,11 @@ struct ReaderStatusStrip: View {
                 Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
                 Text(b.text).font(.system(size: 12))
                 Spacer(minLength: 8)
-                Button(b.step == "ollama" ? "Check Ollama" : b.step == "folder" ? "Choose a folder" : "Open Reading") {
+                Button(b.step == "ollama" ? "Check Ollama" : b.step == "folder" ? "Choose a folder" : b.step == "stream" ? "Open the stream" : "Open Reading") {
                     switch b.step {
                     case "ollama": model.showSettings(tab: .reader); reader.refreshModels()
                     case "folder": reader.chooseFolder()
-                    case "stream": go(.stream)
+                    case "stream": model.show(.recordings)
                     default: go(.reading)
                     }
                 }
@@ -69,7 +199,7 @@ struct ReaderStatusStrip: View {
         }
         let s = reader.stream
         if s.unread > 0 { return "\(s.unread.formatted()) sentence\(s.unread == 1 ? "" : "s") not read yet\(reader.config.autoRead && reader.pausedUntil == nil ? " · reads by itself when you're not recording" : "")" }
-        if reader.unfedCount > 0 { return "\(reader.unfedCount) transcript\(reader.unfedCount == 1 ? "" : "s") about to join the stream" }
+        if reader.unfedCount > 0 { return "\(reader.unfedCount) item\(reader.unfedCount == 1 ? "" : "s") about to join the reader's stream" }
         if s.questionsPending > 0 || s.questionsToWrite { return "Questions to answer from what was read" }
         return "Up to date · \(s.count.formatted()) sentences read"
     }
@@ -108,7 +238,7 @@ struct KeptQuestions: View {
     private var reader: ReaderController { model.reader }
 
     var body: some View {
-        ReaderBlock(title: "Questions about your goals", lede: "Written from your goals (and any you pin from below), answered from the notes with your words cited, and answered again once you have said more.") {
+        ReaderBlock(title: "Questions about your goals", lede: "Written from your goals (and any you pin from the conversation), answered from the notes with your words cited, and answered again once you have said more.") {
             HStack(spacing: 10) {
                 Text(summary).font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
@@ -190,75 +320,7 @@ struct KeptQuestions: View {
     }
 }
 
-/// Anything else: the conversation, with a field under it.
-struct AskBlock: View {
-    let model: AppModel
-    @State private var question = ""
-    @StateObject private var flash = FlashState()
-
-    private var reader: ReaderController { model.reader }
-
-    static let suggestions = [
-        "What do I keep coming back to?",
-        "Where do I contradict myself?",
-        "What did I leave open and never come back to?",
-        "Where did I first sound unsure, and about what?",
-        "Which of my goals does my own writing argue against?",
-    ]
-
-    var body: some View {
-        ReaderBlock(title: "Ask anything", lede: "The model can only open a note file or read sentences by number. Every answer cites sentence ids; click one to see your exact words and the recording they came from. Flag anything wrong and it goes into corrections.md.") {
-            HStack {
-                Text(stateLine).font(.system(size: 11)).foregroundStyle(.secondary)
-                Spacer()
-                Flash(text: flash.text)
-                if !reader.chat.isEmpty {
-                    Button("Clear conversation") {
-                        confirm("Clear this conversation?", detail: "Flags already written to corrections.md are kept.", button: "Clear") { reader.clearChat() }
-                    }
-                    .buttonStyle(.link).font(.system(size: 11))
-                }
-            }
-            if reader.chat.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Nothing asked yet. Try one of these, or write your own below.").font(.system(size: 12)).foregroundStyle(.secondary)
-                    ForEach(Self.suggestions, id: \.self) { s in
-                        Button(s) { reader.ask(s) }.buttonStyle(.link).font(.system(size: 13)).disabled(!canAsk)
-                    }
-                }
-            }
-            ForEach(reader.chat) { turn in
-                TurnView(model: model, turn: turn, pending: reader.asking && turn.id == reader.chat.last?.id) { msg in flash.show(msg) }
-            }
-            HStack(spacing: 10) {
-                TextField("Ask anything about what you said and wrote… (↵ to ask)", text: $question)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { ask() }
-                Button(reader.asking ? "Cancel" : "Ask") { if reader.asking { reader.cancelAsk() } else { ask() } }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!reader.asking && (!canAsk || question.trimmingCharacters(in: .whitespaces).isEmpty))
-            }
-        }
-    }
-
-    private var canAsk: Bool { reader.folder != nil && !reader.config.model.isEmpty && !reader.asking }
-
-    private var stateLine: String {
-        guard let folder = reader.folder else { return "Choose a folder for the notes first." }
-        if reader.notesCount == 0 { return "No notes in \(folder.name)/ yet; until something is read, answers have little to go on." }
-        let n = reader.sentences.count
-        return "Reading from \(folder.name)/ · \(reader.notesCount) note file\(reader.notesCount == 1 ? "" : "s") · \(n.formatted()) sentences\(reader.stream.unread > 0 ? " · \(reader.stream.unread.formatted()) not read yet" : "")"
-    }
-
-    private func ask() {
-        let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty, canAsk else { return }
-        if reader.running { flash.show("Reading is running; this answer shares the model with it.") }
-        question = ""
-        reader.ask(q)
-    }
-}
-
+/// One exchange: your question, the answer with its citations, the trace, and a flag.
 struct TurnView: View {
     let model: AppModel
     let turn: ReaderStream.Turn
@@ -272,54 +334,65 @@ struct TurnView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if !compact, let about = turn.about, let label = turn.aboutLabel {
-                Button {
-                    if let id = UUID(uuidString: about) { model.openRecording(id) }
-                } label: { Label("About \(label)", systemImage: "waveform").font(.system(size: 11)) }
-                .buttonStyle(.link)
-            }
-            HStack(alignment: .firstTextBaseline) {
-                Text(turn.q).font(.system(size: 13, weight: .semibold)).textSelection(.enabled)
-                Spacer(minLength: 6)
-                if !pending, turn.error == nil, turn.about == nil {
-                    let isPinned = reader.pinned.contains(turn.q)
-                    Button { if isPinned { reader.unpin(turn.q) } else { reader.pin(turn.q) } } label: {
-                        Image(systemName: isPinned ? "pin.fill" : "pin")
+            // Your question, on the right like a message you sent.
+            HStack(alignment: .top) {
+                if !compact { Spacer(minLength: 40) }
+                VStack(alignment: .trailing, spacing: 4) {
+                    if !compact, let about = turn.about, let label = turn.aboutLabel {
+                        Button {
+                            if let id = UUID(uuidString: about) { model.openRecording(id) }
+                        } label: { Label("About \(label)", systemImage: "waveform").font(.system(size: 11)) }
+                        .buttonStyle(.link)
                     }
-                    .buttonStyle(.borderless)
-                    .help(isPinned ? "Kept answered under Questions about your goals; click to stop" : "Keep this question answered as you say more")
+                    Text(turn.q).font(.system(size: 13)).textSelection(.enabled).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.accentColor.opacity(0.15)))
                 }
             }
-            if pending {
-                HStack(spacing: 8) { ProgressView().controlSize(.small); Text(reader.askStep.isEmpty ? "reading the notes" : reader.askStep).font(.system(size: 12)).foregroundStyle(.secondary) }
-                if !reader.askLive.isEmpty {
-                    Text(reader.askLive).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled).lineLimit(12)
-                }
-            } else if let error = turn.error {
-                Text("Could not answer: \(error)").font(.system(size: 13)).foregroundStyle(.secondary)
-            } else {
-                Text(turn.answer).font(.system(size: compact ? 13 : 14)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                SentenceIds(ids: turn.evidence, unread: turn.unread, model: model)
-                DisclosureGroup(isExpanded: $showTrace) {
-                    Text(trace).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                } label: {
-                    Text("\(turn.steps) step\(turn.steps == 1 ? "" : "s") · opened \(turn.opened.isEmpty ? "nothing" : turn.opened.joined(separator: ", "))").font(.system(size: 11)).foregroundStyle(.secondary)
-                }
-                if turn.flagged {
-                    Label("Flagged → corrections.md", systemImage: "flag.fill").font(.system(size: 11)).foregroundStyle(.orange)
+            // The answer, on the left.
+            VStack(alignment: .leading, spacing: 8) {
+                if pending {
+                    HStack(spacing: 8) { ProgressView().controlSize(.small); Text(reader.askStep.isEmpty ? "reading the notes" : reader.askStep).font(.system(size: 12)).foregroundStyle(.secondary) }
+                    if !reader.askLive.isEmpty {
+                        Text(reader.askLive).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled).lineLimit(12)
+                    }
+                } else if let error = turn.error {
+                    Text("Could not answer: \(error)").font(.system(size: 13)).foregroundStyle(.secondary)
                 } else {
-                    HStack(spacing: 8) {
-                        TextField("Wrong or missing something? Say what, and it goes into corrections.md", text: $note)
-                            .textFieldStyle(.roundedBorder).controlSize(.small)
-                            .onSubmit { flag() }
-                        Button("Flag") { flag() }.controlSize(.small)
+                    Text(turn.answer).font(.system(size: compact ? 13 : 14)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    SentenceIds(ids: turn.evidence, unread: turn.unread, model: model)
+                    HStack(spacing: 10) {
+                        DisclosureGroup(isExpanded: $showTrace) {
+                            Text(trace).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                        } label: {
+                            Text("\(turn.steps) step\(turn.steps == 1 ? "" : "s") · opened \(turn.opened.isEmpty ? "nothing" : turn.opened.joined(separator: ", "))").font(.system(size: 11)).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if turn.about == nil {
+                            let isPinned = reader.pinned.contains(turn.q)
+                            Button { if isPinned { reader.unpin(turn.q) } else { reader.pin(turn.q) } } label: {
+                                Label(isPinned ? "Pinned" : "Keep answered", systemImage: isPinned ? "pin.fill" : "pin").font(.system(size: 11))
+                            }
+                            .buttonStyle(.borderless)
+                            .help(isPinned ? "Kept answered under Goals as you say more; click to stop" : "Keep this question answered as you say more")
+                        }
+                    }
+                    if turn.flagged {
+                        Label("Flagged → corrections.md", systemImage: "flag.fill").font(.system(size: 11)).foregroundStyle(.orange)
+                    } else {
+                        HStack(spacing: 8) {
+                            TextField("Wrong or missing something? Say what, and it goes into corrections.md", text: $note)
+                                .textFieldStyle(.roundedBorder).controlSize(.small)
+                                .onSubmit { flag() }
+                            Button("Flag") { flag() }.controlSize(.small)
+                        }
                     }
                 }
             }
+            .padding(compact ? 10 : 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 12).fill(.quaternary.opacity(0.4)))
         }
-        .padding(compact ? 10 : 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(0.4)))
     }
 
     private var trace: String {
