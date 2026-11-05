@@ -30,7 +30,13 @@ struct MainWindow: View {
         .toolbar {
             // The same items whatever is showing: a toolbar bridged into an AppKit window
             // loses items whose identity changes, so only labels, actions and enabling vary.
-            ToolbarItem(placement: .navigation) {
+            ToolbarItemGroup(placement: .navigation) {
+                Toggle(isOn: Binding(get: { !model.capture.paused }, set: { model.capture.paused = !$0 })) {
+                    Label(model.capture.paused ? "Hotkey paused" : "Hold \(model.settings.settings.hotkey.glyph) to talk",
+                          systemImage: model.capture.paused ? "keyboard.badge.ellipsis" : "keyboard")
+                }
+                .toggleStyle(.button)
+                .help(model.capture.paused ? "The hotkey is paused; click to record with it again" : "Hold the key anywhere to record; click to pause the hotkey")
                 Toggle(isOn: $model.listening) {
                     Label(model.capture.isListening ? (model.capture.isSpeaking ? "Hearing you…" : "Listening") : "Voice Detection",
                           systemImage: model.capture.isListening ? "ear.fill" : "ear")
@@ -85,7 +91,7 @@ struct MainWindow: View {
     /// The toolbar's Whole stream: on when the stream shows as one text (by choice, or because
     /// no item is chosen); off picks the first item.
     private var wholeStream: Binding<Bool> {
-        Binding(get: { model.showingAll || model.selection.isEmpty || model.selection.contains(AppModel.allID) },
+        Binding(get: { model.selection != [AppModel.goalsID] && (model.showingAll || model.selection.isEmpty || model.selection.contains(AppModel.allID)) },
                 set: { on in
                     if on { model.showWholeStream() }
                     else { model.showingAll = false; if model.selection.isEmpty, let first = model.listed.first { model.selection = [first.id] } }
@@ -109,6 +115,9 @@ struct MainWindow: View {
         case .reader(.notes):
             NotesFileList(model: model).frame(width: 260)
             Divider()
+        case .reader(.status):
+            StatusList(model: model).frame(width: 200)
+            Divider()
         case .settings:
             SettingsList(model: model).frame(width: 200)
             Divider()
@@ -121,21 +130,33 @@ struct MainWindow: View {
     private var detail: some View {
         switch model.section {
         case .recordings: recordings
-        case .reader(.status): ReaderStatusView(model: model, go: { model.showReader($0) })
+        case .reader(.status): status
         case .reader(.forYou): ReaderForYouView(model: model, go: { model.showReader($0) })
         case .reader(.reading): ReaderReadingView(model: model, go: { model.showReader($0) })
         case .reader(.notes): NotesEditor(model: model)
+        case .lenses: LensesView(model: model)
         case .readerGuide: ReaderAboutView()
         case let .settings(tab): SettingsPage(model: model, tab: tab)
         case .setup: SetupView(model: model)
         }
     }
 
-    /// One item's text when one is chosen, or the whole stream as one text.
+    @ViewBuilder
+    private var status: some View {
+        switch model.statusTab {
+        case .now: StatusNowView(model: model)
+        case .reading: ReaderReadingView(model: model, go: { model.showReader($0) })
+        case .setup: SetupView(model: model)
+        }
+    }
+
+    /// Your goals, one item's text when one is chosen, or the whole stream as one text.
     @ViewBuilder
     private var recordings: some View {
         let selected = model.selectedRecordings
-        if model.library.recordings.isEmpty {
+        if model.selection == [AppModel.goalsID] {
+            GoalsView(model: model)
+        } else if model.library.recordings.isEmpty {
             EmptyState(hotkey: model.settings.settings.hotkey)
         } else if !model.showingAll, !model.selection.contains(AppModel.allID), selected.count == 1, let r = selected.first {
             TranscriptView(model: model, recording: r)

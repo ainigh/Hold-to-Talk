@@ -43,6 +43,12 @@ Values marked ° are neutral (the axis behaves as if absent). *Required* axes ha
 | `stream.header-line` | `dateTime`, `none`° | `dateTime` | The line above each item in the whole-stream text and Copy All | Settings → Storage → Copy all. |
 | `stream.ask-from-selection` | `contextMenu`, `off`° | `contextMenu` | Right-click on a selected passage offers "Ask the reader about this…" | The stream is the input; asking should start from it. |
 | `stream.all-row` | `top`, `none`° | `top` | A demarcated ALL row above the items, standing for the whole stream | Choosing it opens the columns for all of it, as choosing an item opens them for one. |
+| `stream.goals-row` | `aboveAll`, `none`° | `aboveAll` | A demarcated Goals row above ALL, opening what you are trying to find out and the questions kept answered | Goals are read with every chunk, so they belong with the input, not with status. |
+| `stream.side-panel` | `ask`, `words`, `none`° | `ask` | What sits beside the whole stream's text; remembered | |
+| `words.classes` | `openOnly` | `openOnly` | Which words the inventory keeps: nouns, verbs, adjectives, adverbs (and words the tagger cannot class), never the closed classes | *Required; single value.* |
+| `words.key` | `lemma`, `surface` | `lemma` | What counts as one word: the lemma ("move" for moved, moving) or the form as written | |
+| `words.tagger` | `naturalLanguage`, `list` | `naturalLanguage` | Apple's tagger with lemmas, or the harness's closed-class list (kind `other` throughout) | `list` is the fallback when the tagger knows no class for the text. |
+| `words.order` | `countThenAlpha` | `countThenAlpha` | Most frequent first, ties alphabetical | *Single value.* |
 | `ask.scope` | `byNavigation` | `byNavigation` | What a question is about: everything when ALL is chosen, one item when an item is | One conversation, filtered by where you are; an item's questions read its sentences first. *Required; single value.* |
 | `ask.placement` | `besidePane`, `ownView` | `besidePane` | Where the conversation sits: beside the text it is about (ALL or item), or as a view of its own | `ownView` was the app before this entry. |
 | `stream.joins-reader` | `afterSettle(seconds)`, `manual` | `afterSettle(60)` | When an item joins the reader's copy of the stream | Settings → Reader. |
@@ -51,7 +57,9 @@ Values marked ° are neutral (the axis behaves as if absent). *Required* axes ha
 
 | Axis | Values | Default | What it decides | Why |
 |---|---|---|---|---|
-| `window.sections` | `[stream, ask, forYou]` main; `[reading, notes, guide]` under the hood; `[settings, setup]` | as listed | The first column's rows and their grouping | Three things you use; how it works below; the app's own below that. *Required.* |
+| `window.sections` | `[stream, status, forYou]` main; `[lenses, notes]` under the hood; `[settings]`; `guide` at the bottom | as listed | The first column's rows and their grouping | Three things you use; how it works below; the app's own below that; the guide out of the way. *Required.* |
+| `status.pages` | `[now, reading, setup]` | that | Status's second column | What is running with its stops; the reading in detail; what the hotkey needs. *Required.* |
+| `window.switches` | `toolbarLeading`, `sidebar` | `toolbarLeading` | Where the hotkey and voice-detection switches sit | Beside what is running, on one line. |
 | `window.sidebar-controls` | `[hotkey, voiceDetection, transcribing, reading, updates, quit]` | as listed | What the first column holds under the rows | State switches and what is running; settings live in Settings. |
 | `window.list-width` | 240…520 | 320 | The second column's width for the stream | Draggable; remembered. |
 | `window.reader-panel.shown` | `shown`, `hidden` | `shown` | Whether the reader's take on an item shows beside its text | The toggle on the item's header; remembered globally. |
@@ -95,6 +103,9 @@ Values marked ° are neutral (the axis behaves as if absent). *Required* axes ha
 - `item.timestamp` on the row is `dayTime` when `stream.order = custom`. *Why:* your own order has no day sections to say the day. *Consequence:* changing the order changes the row's date format.
 - `item.reader-mark = edited` depends on `stream.joins-reader`: it means edited after the reader took the item, which `item.edited-mark` does not. *Consequence:* a change to `stream.joins-reader` changes when the reader mark appears, never the item's own mark.
 - `window.voice-answer-row` depends on the reader having armed a spoken answer.
+- `stream.goals-row`, `stream.all-row` and items are exclusive in the selection: the last chosen wins. *Why:* each opens a different right pane. *Consequence:* a multiple selection never includes a special row.
+- `words.key = lemma` needs `words.tagger = naturalLanguage`; with `list` the key is the surface form whatever `words.key` says. *Consequence:* the fallback counts "moved" and "moving" apart.
+- The Words panel's search (click a word) sets the stream's search text, so `stream.whole-view`'s search relation applies: ALL then shows the matching items.
 - `transcribe.progress-view` is consulted only when the audio was cut into more than one chunk; the reporting is per-chunk always.
 - `ask.scope = byNavigation` depends on `stream.all-row`: with no ALL row, "everything" has no place to be chosen and the conversation would need a view of its own (`ask.placement = ownView`). *Consequence:* the two change together.
 - `window.activity`, `window.sidebar-controls`, `window.footer.model` and the menu bar glyph all read the running state; the shipped point says it at the top right (with the control), names the model in the footer, and changes the glyph. *Consequence:* a value of `window.activity` other than `topRight` must put the control back in the sidebar or nowhere; the footer and the glyph are not the place to look for the control.
@@ -123,13 +134,23 @@ stream:
   header-line: dateTime
   ask-from-selection: contextMenu
   all-row: top
+  goals-row: aboveAll
+  side-panel: ask
   joins-reader: afterSettle(60)
 ask:
   scope: byNavigation
   placement: besidePane
 window:
-  sections: [stream, status, forYou | reading, notes, guide | settings, setup]
-  sidebar-controls: [hotkey, voiceDetection, updates, quit]
+  sections: [stream, status, forYou | lenses, notes | settings | guide]
+  sidebar-controls: [setupWarning, guide, updates, quit]
+  switches: toolbarLeading
+status:
+  pages: [now, reading, setup]
+words:
+  classes: openOnly
+  key: lemma
+  tagger: naturalLanguage
+  order: countThenAlpha
   activity: topRight
   footer.model: name
   list-width: 320
@@ -174,6 +195,9 @@ Where the sets live: `ItemPresentation.swift` (items), `AudioSplit.swift` and `W
 | "Pause the transcriber instead of stopping it" | `transcribe.stop` has one value; a pause needs whisper-side work the spec does not estimate | new value, cost unknown |
 | "The reader's progress as tiles, like the transcriber's" | the reader reports a percentage only; a per-chunk report and a `reader.progress-view` axis | new axis |
 | "Remember the last run across launches" | `LastRun` persisted in Settings or the store | new scope |
+| "Count proper nouns separately" | `words.classes` expansion (the tagger has a name tag scheme) | axis expansion |
+| "Words as a lens the reader can read" | a registry entry: write the inventory into the notes folder as a file | registry entry |
+| "Stop buttons in the sidebar too" | `window.activity` expansion | axis expansion |
 
 ## 9. Known seams
 
@@ -197,4 +221,5 @@ Where the sets live: `ItemPresentation.swift` (items), `AudioSplit.swift` and `W
 
 - **Items made uniform (this spec's first entry).** Request: "make a text paste look identical to audio". Before: the row branched on `audioFile == nil` ("text only"), `sessionID` ("heard") and `sourceDevice` ("imported"); the header printed the device and a zero duration for text; Re-transcribe showed disabled for text. Move: a new group, Items, with `item.origin-mark` (shipped `silent`) and `item.measure` (shipped `durationOrWords`); playback and Re-transcribe keyed on audio present. Predicted cost: new axis. Actual: new axis plus modifying the row and header to read it (the first time an axis is introduced into code that had the decision inline). The shipped point moved on purpose: `origin-mark` was `word`, is `tooltip`.
 - **Status, ALL and the ask beside the text.** Requests: the model in the footer; cutting shown apart from transcribing; what is running at the top right with Stop; an ALL row; the conversation beside what it is about; the first column's Ask becomes Status. Moves: `window.activity`, `window.footer.model`, `transcribe.phase`, `stream.all-row`, `ask.scope`, `ask.placement`; `window.sections` and `sidebar-controls` values changed. Predicted: values and new axes. Actual: the same, plus modifying the Ask view into Status and a panel (the conversation had no registry; it does now, `AskPanel`). The shipped point moved on purpose in every one of these. The round's review found a compile error (a setting read before it was fetched), a last-run record for a deleted item, and a bar hidden while transcribing at 0%; all fixed. It also found the activity line's hidden priority rule (now `window.activity.items`), the search filtering ALL without a relation (written), and the two side panels' separate layout numbers (a seam).
+- **Status in columns, Lenses on its own, Goals in the stream, switches at the top, Words.** Requests as listed. Moves: `status.pages`, `window.switches`, `stream.goals-row`, `stream.side-panel`, the `words.*` group; `window.sections` and `sidebar-controls` values changed; Reading and Setup route into Status. Predicted: values, new axes, and one new group (Words) with its own code (a pass in the harness, tested, and a tagger in the app). Actual: the same, plus modifying the Reading view (the lenses out of it) and the Status view (into a column with pages). The shipped point moved on purpose throughout.
 - **First review.** One VFD review of this spec found: three different tests for "has audio" (now `hasAudio` / `hadAudio` on `Recording`, with the relation written); `reader-panel` fused (split into shown and placement); `at-once` hiding `automatic` and a bound (now in the set); `chunk-length` fusing three constants and depending on `at-once` (split, relation written); the edited mark bypassing the registry (now through it) and a second, reader-side edited mark (its own axis); the origin tooltip leaking past `origin-mark` (now a value of it). Declined for now, recorded as seams: a typed origin field, a copy registry, a type-scale axis, the `barOnly` interpreter, routing the reader marks and timestamps through the registry, and design-contract checks.

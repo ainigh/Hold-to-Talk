@@ -9,6 +9,8 @@ struct StreamTextView: View {
     let model: AppModel
     @State private var copied = false
     @AppStorage("streamAskPanel") private var showAsk = true
+    /// Which panel sits beside the text: the conversation, or the words.
+    @AppStorage("streamSidePanel") private var side = "ask"
 
     private var reader: ReaderController { model.reader }
 
@@ -19,18 +21,23 @@ struct StreamTextView: View {
                 HStack(spacing: 0) {
                     stream
                     Divider()
-                    AskPanel(model: model).frame(width: min(360, max(280, geo.size.width * 0.36)))
+                    panel.frame(width: min(360, max(280, geo.size.width * 0.36)))
                 }
             } else if showAsk {
                 VSplitView {
                     stream.frame(minHeight: 200)
-                    AskPanel(model: model).frame(minHeight: 160, idealHeight: 280)
+                    panel.frame(minHeight: 160, idealHeight: 280)
                 }
             } else {
                 stream
             }
         }
-        .onChange(of: model.askDraftRequests) { _, _ in if model.askDraftTarget == nil { showAsk = true } }
+        .onChange(of: model.askDraftRequests) { _, _ in if model.askDraftTarget == nil { showAsk = true; side = "ask" } }
+    }
+
+    @ViewBuilder
+    private var panel: some View {
+        if side == "words" { WordsPanel(model: model, items: model.listed) } else { AskPanel(model: model) }
     }
 
     private var stream: some View {
@@ -54,9 +61,13 @@ struct StreamTextView: View {
                     Task { try? await Task.sleep(for: .milliseconds(1200)); copied = false }
                 } label: { Label(copied ? "Copied" : "Copy All", systemImage: copied ? "checkmark" : "doc.on.doc") }
                 .help("Copy everything shown (⌘⇧C)")
-                Toggle(isOn: $showAsk) { Label("Ask", systemImage: "bubble.left.and.text.bubble.right") }
-                    .toggleStyle(.button).controlSize(.small)
-                    .help(showAsk ? "Hide the conversation about the stream" : "Ask about everything in the stream")
+                Picker("Beside", selection: Binding(get: { showAsk ? side : "none" }, set: { v in if v == "none" { showAsk = false } else { showAsk = true; side = v } })) {
+                    Label("Ask", systemImage: "bubble.left.and.text.bubble.right").tag("ask")
+                    Label("Words", systemImage: "textformat.abc").tag("words")
+                    Label("Text only", systemImage: "rectangle").tag("none")
+                }
+                .pickerStyle(.segmented).labelsHidden().controlSize(.small).fixedSize()
+                .help("Beside the text: the conversation about everything, the words that carry its meaning (nouns, verbs, adjectives, adverbs, counted), or nothing")
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)

@@ -37,6 +37,11 @@ struct RecordingReaderPanel: View {
                     findings(ids)
                     askSection
                 }
+                if !recording.text.isEmpty {
+                    section("Words") {
+                        WordsPanel(model: model, items: [recording], compact: true)
+                    }
+                }
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
