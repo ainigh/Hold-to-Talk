@@ -1,7 +1,8 @@
 import Foundation
 
-/// One lens: a full pass over the stream, window by window. `carry` means it keeps a notebook
-/// between windows; `reads` lists lens ids whose final notebooks it may see.
+/// One lens: one way of reading the stream, a chunk at a time, alongside every other lens.
+/// `carry` means it keeps a notebook between chunks; `reads` lists lens ids whose current
+/// notebooks it may see.
 public struct Lens: Codable, Equatable, Identifiable, Sendable {
     public var id: String
     public var on = true
@@ -30,10 +31,10 @@ public struct Lens: Codable, Equatable, Identifiable, Sendable {
         instructions = try c.decodeIfPresent(String.self, forKey: .instructions) ?? ""
     }
 
-    /// The id of the lens whose entries are questions for the author; the Stream view offers them for answering.
+    /// The id of the lens whose entries are questions for the author, offered for answering by voice or by typing.
     public static let gapsId = "gaps"
 
-    public static let questionsPurpose = "Questions generated overnight from the author's goals, each answered from the notes with cited ids. A first place to look, and a check on whether the notes can answer what the author cares about."
+    public static let questionsPurpose = "Questions about the author's goals (generated from them, plus any the author pinned), each answered from the notes with cited ids and refreshed as the stream grows. A first place to look, and a check on whether the notes can answer what the author cares about."
 
     /// A file-safe id from a title.
     public static func slug(_ title: String) -> String {
@@ -52,7 +53,7 @@ public struct Lens: Codable, Equatable, Identifiable, Sendable {
         Lens(id: "ledger", carry: false, reads: [], ignoreGoals: true, title: "Ledger",
              purpose: "One line per sentence: what it is about, who or what it names, and what kind of sentence it is. The complete index; use it to check whether something is present at all.",
              instructions: """
-             For EVERY sentence in the window, write exactly one entry with that sentence's single id. Do not skip any sentence and do not merge sentences. Do not summarize.
+             For EVERY sentence in the chunk, write exactly one entry with that sentence's single id. Do not skip any sentence and do not merge sentences. Do not summarize.
              Each entry: what the sentence is about in a few words; any person, place, project, thing or idea it names; and its kind, one of: statement, feeling, question, decision, rejection, plan, memory, aside.
              Example entry text: "the Kethra supplier missing deadlines; names: Kethra supplier; kind: statement"
              """),
@@ -98,10 +99,11 @@ public struct Lens: Codable, Equatable, Identifiable, Sendable {
              Notebook: for each goal, a one-line running verdict: supported / mixed / undercut, with the strongest ids either way.
              """),
         Lens(id: gapsId, carry: true, reads: ["people-and-things", "open-threads"], title: "Questions for you",
-             purpose: "Questions the reader needed answered to understand the stream: who or what something is, what a vague reference points to, what happened next. The author answers them on the Stream view and the answers join the stream for the next night.",
+             purpose: "Questions the reader needed answered to understand the stream: who or what something is, what a vague reference points to, what happened next. The author answers them (by voice or by typing) and the answers join the stream, to be read like everything else.",
              instructions: """
-             You are the reader who does not know what the author knows. Write a question wherever the stream assumes something you cannot find in the window or the notebooks: who a person is and how they relate to the author, what a project or place is, what a vague reference ("the thing with Mara", "the earlier plan") points to, what happened between two sentences, what the outcome of something was. Prefer questions whose answer would change how several sentences read. Ask for facts the author has and the text lacks, not for feelings or opinions. Lines that begin "Q:" followed by "A:" are the author's earlier answers; do not ask those again.
-             Entry text: the question itself, one line, ending with a question mark, citing the ids that raised it. At most 5 per window; if the window raises nothing new, write [none].
+             You are the reader who does not know what the author knows. Write a question wherever the stream assumes something you cannot find in the chunk or the notebooks: who a person is and how they relate to the author, what a project or place is, what a vague reference ("the thing with Mara", "the earlier plan") points to, what happened between two sentences, what the outcome of something was. Prefer questions whose answer would change how several sentences read. Ask for facts the author has and the text lacks, not for feelings or opinions. Lines that begin "Q:" followed by "A:" are the author's earlier answers; do not ask those again.
+             Entry text: the question itself, one line, ending with a question mark, citing the ids that raised it. At most 3 per chunk; if the chunk raises nothing new, write [none].
+             When a sentence in this chunk answers one of your earlier questions, write an entry "settled: <the earlier question, word for word>" citing the ids that answer it.
              Notebook: the open questions so far, one per line with ids, so that you do not ask the same thing twice; remove a question when a later sentence or an answer settles it.
              """),
     ]

@@ -21,7 +21,7 @@ enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
         case .audio: "mic"
         case .transcription: "text.quote"
         case .storage: "internaldrive"
-        case .reader: "moon.stars"
+        case .reader: "eyeglasses"
         }
     }
 }
@@ -290,8 +290,20 @@ struct ReaderSettings: View {
                 }
                 Text(ollamaDetail).font(.caption).foregroundStyle(reader.ollamaOK ? Color.secondary : Color.orange)
                 Toggle("Let the model think before it answers", isOn: $reader.config.think)
-                Text("Off by default: thinking models (qwen3, deepseek-r1, gpt-oss) otherwise spend the output cap on hidden reasoning and take far longer per window. Turn on only if you want it and the output cap is generous.")
+                Text("Off by default: thinking models (qwen3, deepseek-r1, gpt-oss) otherwise spend the output cap on hidden reasoning and take far longer per call. Turn on only if you want it and the output cap is generous.")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("When it reads") {
+                Toggle("Transcripts join the stream by themselves", isOn: $reader.config.feedTranscripts)
+                if reader.config.feedTranscripts {
+                    Stepper("…once unchanged for \(reader.config.settleSeconds) s", value: $reader.config.settleSeconds, in: 0...3600, step: 15)
+                    Text("Long enough to fix a word or two before the reader takes it. An edit made later can still be added as a correction, from the transcript's Reader panel.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Toggle("Read by itself when there's something new", isOn: Binding(get: { reader.config.autoRead }, set: { reader.config.autoRead = $0; if $0 { reader.resumeAuto() } }))
+                Text("Never while you record or transcribe: whisper and the model share the Mac. Off, it reads only when you click Read now.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("Keep the Mac awake while reading", isOn: $reader.config.keepAwake)
             }
             Section("Pace and budgets") {
                 Stepper("Prompt window W: \(reader.config.windowTokens.formatted()) tokens", value: $reader.config.windowTokens, in: 1000...200_000, step: 500)
@@ -300,30 +312,25 @@ struct ReaderSettings: View {
                         .help("Read the model's trained context length from Ollama and set W from it")
                 }
                 if !reader.contextNote.isEmpty { Text(reader.contextNote).font(.caption).foregroundStyle(.secondary) }
-                Stepper("Sentences per window: \(reader.config.maxSentences == 0 ? "as many as fit" : reader.config.maxSentences.formatted())", value: $reader.config.maxSentences, in: 0...2000, step: 5)
-                Stepper("Cool-off between calls: \(reader.config.coolOffSec) s", value: $reader.config.coolOffSec, in: 0...3600, step: 5)
+                Stepper("Sentences at a time: \(reader.config.chunkSentences == 0 ? "as many as fit" : reader.config.chunkSentences.formatted())", value: $reader.config.chunkSentences, in: 0...400, step: 4)
+                Stepper("Lenses per call: \(reader.config.lensesPerCall == 0 ? "as many as fit" : reader.config.lensesPerCall.formatted())", value: $reader.config.lensesPerCall, in: 0...20)
+                Text("Every lens reads each chunk. With “as many as fit”, they share one call while the window and the output cap allow, and the rest go in the next call on the same chunk. One per call is slower but easiest for a small model.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Stepper("Rest between calls: \(reader.config.coolOffSec) s", value: $reader.config.coolOffSec, in: 0...3600, step: 5)
                 Stepper("Notebook cap M: \(reader.config.notebookTokens.formatted()) tokens", value: $reader.config.notebookTokens, in: 100...20_000, step: 100)
                 Stepper("Output cap: \(reader.config.outputTokens.formatted()) tokens", value: $reader.config.outputTokens, in: 200...32_000, step: 100)
-                DisclosureGroup("More budgets", isExpanded: $moreBudgets) {
-                    Stepper("Prior-lens digest cap: \(reader.config.digestTokens.formatted()) tokens", value: $reader.config.digestTokens, in: 0...20_000, step: 100)
-                    Stepper("Questions to generate: \(reader.config.questionCount)", value: $reader.config.questionCount, in: 0...200)
-                    Stepper("Morning steps per question: \(reader.config.morningSteps)", value: $reader.config.morningSteps, in: 1...40)
+                DisclosureGroup("Questions and more budgets", isExpanded: $moreBudgets) {
+                    Stepper("Questions about your goals: \(reader.config.questionCount)", value: $reader.config.questionCount, in: 0...100)
+                    Stepper("Answer again after \(reader.config.questionRefresh.formatted()) new sentences", value: $reader.config.questionRefresh, in: 1...5000, step: 10)
+                    Stepper("Steps per answer: \(reader.config.askSteps)", value: $reader.config.askSteps, in: 1...40)
+                    Stepper("Other lenses' notebooks cap: \(reader.config.digestTokens.formatted()) tokens", value: $reader.config.digestTokens, in: 0...20_000, step: 100)
                     Stepper("File page size: \(reader.config.pageTokens.formatted()) tokens", value: $reader.config.pageTokens, in: 200...20_000, step: 100)
                     Stepper("Chars per token (estimate): \(String(format: "%.2f", reader.config.charsPerToken))", value: $reader.config.charsPerToken, in: 2...5, step: 0.1)
                 }
                 Text("num_ctx is set automatically to W + output cap + 512 (\(reader.config.numCtx.formatted()) now) so Ollama never truncates a prompt. Every prompt is measured before it is sent and refused if it is over W. Chars per token is recalibrated after every call.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("The stream and the night") {
-                Toggle("Add Holdnote's transcripts to the stream when a night starts", isOn: $reader.config.feedTranscripts)
-                Toggle("Start a night by itself every day", isOn: $reader.config.scheduleEnabled)
-                if reader.config.scheduleEnabled {
-                    DatePicker("At", selection: Binding(get: { Calendar.current.date(bySettingHour: reader.config.scheduleMinute / 60, minute: reader.config.scheduleMinute % 60, second: 0, of: Date()) ?? Date() },
-                                                       set: { reader.config.scheduleMinute = Calendar.current.component(.hour, from: $0) * 60 + Calendar.current.component(.minute, from: $0) }),
-                               displayedComponents: .hourAndMinute)
-                    Text("Only when there is something new to read and Ollama answers; the Mac must be awake (or on power with the lid open). The night keeps the Mac awake once it runs.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+            Section("The notes") {
                 LabeledContent("Notes folder") {
                     HStack {
                         Text(reader.folder?.root.path ?? "none").font(.caption).lineLimit(1).truncationMode(.middle)

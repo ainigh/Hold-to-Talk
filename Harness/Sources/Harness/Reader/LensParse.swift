@@ -58,6 +58,44 @@ public enum LensParse {
         return LensOutput(entries: entries, notebook: (notebook ?? []).joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
+    /// One reply written for several lenses at once: the text under each `=== <lens id> ===`
+    /// header, by lens id. Headers are found leniently (`## ledger`, `**Ledger**`, `=== Ledger ===`,
+    /// the lens id or its title, any case). With one lens and no header, the whole reply is its
+    /// section. Text before the first header is ignored.
+    public static func sections(_ text: String, lenses: [(id: String, title: String)]) -> [String: String] {
+        var names: [String: String] = [:]
+        for l in lenses {
+            names[l.id.lowercased()] = l.id
+            names[l.title.lowercased()] = l.id
+        }
+        func header(_ raw: String) -> String? {
+            var l = raw.trimmingCharacters(in: .whitespaces)
+            // A header has a marker: === ledger ===, ## ledger, **ledger**, [ledger], LENS ledger.
+            // A bare word is not one, so a notebook line that happens to read "Threads:" stays put.
+            guard let f = l.first, "=#*[".contains(f) || l.lowercased().hasPrefix("lens") else { return nil }
+            let edge = CharacterSet(charactersIn: "=#*_:[]- \t")
+            l = l.trimmingCharacters(in: edge)
+            // "=== ledger === Ledger": the part before the inner marker.
+            if let r = l.range(of: "===") ?? l.range(of: "==") { l = String(l[..<r.lowerBound]).trimmingCharacters(in: edge) }
+            var low = l.lowercased()
+            if low.hasPrefix("lens") { low = String(low.dropFirst(4)).trimmingCharacters(in: edge) }
+            if let id = names[low] { return id }
+            // "ledger (keeps a notebook)" or "ledger — Ledger"
+            for sep in [" (", " —", " –", " - ", ":"] {
+                if let r = low.range(of: sep), let id = names[String(low[..<r.lowerBound]).trimmingCharacters(in: edge)] { return id }
+            }
+            return nil
+        }
+        var out: [String: [String]] = [:]
+        var current: String?
+        for raw in clean(text).components(separatedBy: "\n") {
+            if let id = header(raw) { current = id; out[id] = out[id] ?? []; continue }
+            if let current { out[current]?.append(raw) }
+        }
+        if out.isEmpty, lenses.count == 1 { return [lenses[0].id: clean(text)] }
+        return out.mapValues { $0.joined(separator: "\n") }
+    }
+
     /// `[ids] body`, `(ids) body`, or `s1, s2 - body`.
     static func splitEntry(_ l: String) -> (String, String)? {
         let separators: Set<Character> = [":", "-", "–", "—"]

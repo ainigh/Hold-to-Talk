@@ -2,8 +2,8 @@ import Harness
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// What you wrote and said, and what you want to find out about it. Transcripts join the stream
-/// by themselves; pastes and dropped text files join it here; the reader's questions are answered here.
+/// What goes into the stream: your transcripts (each joins by itself a minute after it settles),
+/// text you paste or drop, and your answers to the reader's questions; and what joined lately.
 struct ReaderStreamView: View {
     let model: AppModel
     let go: (ReaderView) -> Void
@@ -14,78 +14,77 @@ struct ReaderStreamView: View {
     private var reader: ReaderController { model.reader }
 
     var body: some View {
-        @Bindable var readerBinding = model.reader
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("The stream").font(.title2.weight(.semibold))
-                    Text("What you wrote and said, and what you want to find out about it. The night reads the stream through every lens; the morning answers from the notes it leaves behind.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-                checklist
-                ReaderBlock(title: "What are you trying to find out?", lede: "In your own words. Every lens reads this first, and the last pass of the night generates and answers questions around it.") {
-                    TextEditor(text: $readerBinding.goals)
-                        .font(.system(size: 13))
-                        .frame(minHeight: 80, maxHeight: 160)
-                        .padding(6)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(.background))
-                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
-                        .overlay(alignment: .topLeading) {
-                            if reader.goals.isEmpty {
-                                Text("e.g. I want to understand why I keep circling back to the move, what I actually feel about the people involved, and which of my plans I’ve quietly abandoned.")
-                                    .font(.system(size: 13)).foregroundStyle(.tertiary).padding(11).allowsHitTesting(false)
-                            }
-                        }
-                    Text(reader.goalsState).font(.system(size: 11)).foregroundStyle(.secondary)
-                }
-                if let gaps = reader.gaps { gapsBlock(gaps) }
-                ReaderBlock(title: "Your transcripts", lede: "Every recording and pasted note in Holdnote joins the stream when a night starts (Settings → Reader turns that off), oldest first, with its date. Earlier sentences keep their ids and the next night reads only what is new.") {
-                    HStack(spacing: 10) {
-                        Text(reader.unfedCount > 0 ? "\(reader.unfedCount) transcript\(reader.unfedCount == 1 ? "" : "s") not yet in the stream" : "Every transcript is in the stream")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-                        Button("Add them now") {
-                            if let fed = reader.feedTranscripts() { flash.show(fed.recordings > 0 ? "Added \(fed.recordings) transcripts (\(fed.sentences) sentences)" : "Nothing new to add") }
-                        }
-                        .disabled(reader.unfedCount == 0 || reader.running || reader.folder == nil)
-                        .controlSize(.small)
+        ReaderPage(title: "The stream", lede: "Everything the reader reads, in the order it happened: what you say (every transcript joins by itself), what you paste here, and your answers to its questions. Sentences are numbered once and keep their ids, so notes stay valid as the stream grows.") {
+            ReaderBlock(title: "Your recordings", lede: reader.config.feedTranscripts
+                        ? "Every transcript and note in Holdnote joins the stream about \(reader.config.settleSeconds) seconds after it is final and you've stopped editing it, with its date. Edit one after it joined and it can join again as a correction."
+                        : "Transcripts join only when you add them (Settings → Reader turns joining by themselves back on).") {
+                HStack(spacing: 10) {
+                    Text(reader.unfedCount > 0 ? "\(reader.unfedCount) transcript\(reader.unfedCount == 1 ? "" : "s") not yet in the stream" : "Every transcript is in the stream")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                    Button("Add them now") {
+                        if let fed = reader.feedTranscripts() { flash.show(fed.recordings > 0 ? "Added \(fed.recordings) transcripts (\(fed.sentences) sentences)" : "Nothing new to add") }
                     }
+                    .disabled(reader.unfedCount == 0 || reader.folder == nil)
+                    .controlSize(.small)
+                    Spacer()
+                    Flash(text: flash.text)
                 }
-                ReaderBlock(title: "Add to the stream", lede: "Paste anything: a day's notes, a journal entry, an email to yourself. Or drop a text file on it.") {
-                    TextEditor(text: $addText)
-                        .font(.system(size: 13))
-                        .frame(minHeight: 120, maxHeight: 240)
-                        .padding(6)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(.background))
-                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(dropping ? Color.accentColor : Color(nsColor: .quaternaryLabelColor), lineWidth: dropping ? 2 : 1))
-                        .onDrop(of: [.fileURL, .plainText], isTargeted: $dropping) { providers in drop(providers) }
-                    HStack {
-                        Text(preview).font(.system(size: 11)).foregroundStyle(.secondary)
-                        Spacer()
-                        Text("⌘↵").font(.system(size: 11)).foregroundStyle(.tertiary)
-                        Button("Add to stream") { add() }
-                            .keyboardShortcut(.return, modifiers: .command)
-                            .disabled(addText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || reader.folder == nil || reader.running)
-                    }
-                    Text(streamState).font(.system(size: 11)).foregroundStyle(.secondary)
-                    if let plan = reader.plan, reader.stream.count > 0 {
-                        Text("Each lens reads about \(plan.perWindow.formatted()) sentences at a time (average sentence \(reader.stream.averageChars.formatted()) characters; W \(reader.config.windowTokens.formatted()) fits ≈ \(plan.perToken.formatted())\(reader.config.maxSentences > 0 ? ", capped at \(reader.config.maxSentences.formatted())" : "")).")
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
-                    }
-                    if !reader.additions.isEmpty {
-                        VStack(alignment: .leading, spacing: 2) {
-                            ForEach(Array(reader.additions.suffix(5).reversed().enumerated()), id: \.offset) { _, a in
-                                Text("\(when(a.added)) · \(a.sentences.formatted()) sentences · \(a.from)–\(a.to)\(a.source != nil ? " · transcript" : "")")
-                                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
-                            }
+            }
+            ReaderBlock(title: "Add to the stream", lede: "Paste anything: a day's notes, a journal entry, an email to yourself. Or drop a text file on it.") {
+                TextEditor(text: $addText)
+                    .font(.system(size: 13))
+                    .frame(minHeight: 120, maxHeight: 240)
+                    .padding(6)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(.background))
+                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(dropping ? Color.accentColor : Color(nsColor: .quaternaryLabelColor), lineWidth: dropping ? 2 : 1))
+                    .onDrop(of: [.fileURL, .plainText], isTargeted: $dropping) { providers in drop(providers) }
+                HStack {
+                    Text(preview).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Spacer()
+                    Text("⌘↵").font(.system(size: 11)).foregroundStyle(.tertiary)
+                    Button("Add to stream") { add() }
+                        .keyboardShortcut(.return, modifiers: .command)
+                        .disabled(addText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || reader.folder == nil)
+                }
+                Text(streamState).font(.system(size: 11)).foregroundStyle(.secondary)
+                if let plan = reader.plan, reader.stream.count > 0, reader.stream.unread > 0 {
+                    Text("The reader takes about \(plan.perChunk.formatted()) sentences at a time (average sentence \(reader.stream.averageChars.formatted()) characters; W \(reader.config.windowTokens.formatted()) fits more\(reader.config.chunkSentences > 0 ? ", but Settings → Reader keeps chunks to \(reader.config.chunkSentences.formatted())" : "")).")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+            }
+            if !reader.additions.isEmpty {
+                ReaderBlock(title: "Lately", lede: "") {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(Array(reader.additions.suffix(8).reversed().enumerated()), id: \.offset) { _, a in
+                            additionRow(a)
                         }
                     }
                     Text("The folder's stream.txt is the raw record and sentences.txt the numbered one; both are under Notes.")
                         .font(.system(size: 11)).foregroundStyle(.tertiary)
                 }
-                Flash(text: flash.text)
             }
-            .padding(24)
-            .frame(maxWidth: 760, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private func additionRow(_ a: ReaderStream.Addition) -> some View {
+        let r = a.source.flatMap(UUID.init(uuidString:)).flatMap { model.library.recording($0) }
+        HStack(spacing: 6) {
+            Text("\(a.from)–\(a.to)").font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+            Text("· \(a.sentences.formatted()) sentence\(a.sentences == 1 ? "" : "s") · \(kind(a))").font(.system(size: 11)).foregroundStyle(.secondary)
+            if let r {
+                Button(r.title) { model.openRecording(r.id) }.buttonStyle(.link).font(.system(size: 11)).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Text(when(a.added)).font(.system(size: 11)).foregroundStyle(.tertiary)
+        }
+    }
+
+    private func kind(_ a: ReaderStream.Addition) -> String {
+        switch a.kind ?? "" {
+        case "answer": a.source != nil ? "answer, spoken" : "answer"
+        case "revision": "corrected transcript"
+        default: a.source != nil ? "transcript" : "pasted"
         }
     }
 
@@ -99,7 +98,7 @@ struct ReaderStreamView: View {
     private var streamState: String {
         let s = reader.stream
         if s.count > 0 { return "\(s.count.formatted()) sentences in the stream · \(s.unread > 0 ? "\(s.unread.formatted()) not yet read by every lens" : "all read by every lens")" }
-        if s.rawPresent { return "stream.txt is in the folder and will be numbered when the night starts" }
+        if s.rawPresent { return "stream.txt is in the folder and is numbered when reading starts" }
         return "The stream is empty. Record something, or paste above, to begin."
     }
 
@@ -130,8 +129,14 @@ struct ReaderStreamView: View {
         }
         return any
     }
+}
 
-    // MARK: - Before the first night
+/// What stands between you and the reader's first answers, in the order to fix it.
+struct GettingStarted: View {
+    let model: AppModel
+    let go: (ReaderView) -> Void
+
+    private var reader: ReaderController { model.reader }
 
     struct Step: Identifiable {
         var id: String
@@ -145,18 +150,17 @@ struct ReaderStreamView: View {
         [
             Step(id: "ollama", ok: reader.ollamaOK, text: "Start Ollama and pull a model (ollama pull llama3.1:8b).", action: "Check", go: { model.showSettings(tab: .reader); reader.refreshModels() }),
             Step(id: "folder", ok: reader.folder != nil, text: "Choose a folder for the notes. The default is inside Holdnote's own folder.", action: "Choose", go: { reader.chooseFolder() }),
-            Step(id: "goals", ok: !reader.goals.trimmingCharacters(in: .whitespaces).isEmpty, text: "Write what you are trying to find out.", action: "", go: {}),
-            Step(id: "stream", ok: reader.stream.count > 0 || reader.stream.rawPresent || reader.unfedCount > 0, text: "Record something, or paste some text into the stream.", action: "", go: {}),
-            Step(id: "night", ok: reader.hasNotes, text: "Start the night. It runs in the background; the window can be closed.", action: "Go to Night", go: { go(.night) }),
+            Step(id: "goals", ok: !reader.goals.trimmingCharacters(in: .whitespaces).isEmpty, text: "Write what you are trying to find out (below).", action: "", go: {}),
+            Step(id: "stream", ok: reader.stream.count > 0 || reader.stream.rawPresent || reader.unfedCount > 0, text: "Record something (hold \(model.settings.settings.hotkey.glyph)), or paste text into the stream.", action: "Paste text", go: { go(.stream) }),
+            Step(id: "read", ok: reader.hasNotes, text: reader.config.autoRead ? "That's all: it reads by itself, whenever you're not recording." : "Read: it runs in the background, and the window can be closed.", action: reader.config.autoRead ? "" : "Read now", go: { reader.startReading() }),
         ]
     }
 
-    @ViewBuilder
-    private var checklist: some View {
+    var body: some View {
         let steps = self.steps
         if !steps.allSatisfy(\.ok) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Before the first night").font(.system(size: 13, weight: .semibold))
+                Text("Getting started").font(.system(size: 13, weight: .semibold))
                 ForEach(steps) { s in
                     HStack(spacing: 8) {
                         Image(systemName: s.ok ? "checkmark.circle.fill" : "circle").foregroundStyle(s.ok ? Color.green : Color.secondary)
@@ -169,56 +173,5 @@ struct ReaderStreamView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(0.4)))
         }
-    }
-
-    // MARK: - Questions for you
-
-    private func gapsBlock(_ gaps: (open: [ReaderStream.Gap], answered: Int)) -> some View {
-        ReaderBlock(title: "Questions for you", lede: "What the reader could not work out from the text alone. Answer in your own words, or hold the hotkey and say it, then paste the transcript in; each answer joins the stream and is read the next night.") {
-            Text(gaps.open.isEmpty ? "\(gaps.answered) answered" : "\(gaps.open.count) open · \(gaps.answered) answered").font(.system(size: 11)).foregroundStyle(.secondary)
-            if gaps.open.isEmpty {
-                Text("Every question so far is answered. The next night may raise more.").font(.system(size: 12)).foregroundStyle(.secondary)
-            }
-            ForEach(gaps.open) { gap in
-                GapRow(gap: gap, model: model) { msg in if let msg { flash.show(msg) } }
-            }
-        }
-    }
-}
-
-struct GapRow: View {
-    let gap: ReaderStream.Gap
-    let model: AppModel
-    let done: (String?) -> Void
-    @State private var answer = ""
-    @State private var busy = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(gap.question).font(.system(size: 13, weight: .medium)).textSelection(.enabled)
-            SentenceIds(ids: gap.ids) { model.reader.sentence($0) }
-            HStack(alignment: .top, spacing: 8) {
-                TextField("Your answer, in your own words", text: $answer)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { send(answer) }
-                Button("Use last transcript") {
-                    if let last = model.library.recordings.first(where: { $0.status == .final && !$0.text.isEmpty }) { answer = last.text.trimmingCharacters(in: .whitespacesAndNewlines) }
-                }
-                .help("Put the newest recording's text here (hold the hotkey, say your answer, then click)")
-                .controlSize(.small)
-                Button("Answer") { send(answer) }.disabled(answer.trimmingCharacters(in: .whitespaces).isEmpty || busy).controlSize(.small)
-                Button("Skip") { send("") }.disabled(busy).help("Do not ask this again").controlSize(.small)
-            }
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(0.4)))
-    }
-
-    private func send(_ a: String) {
-        busy = true
-        let msg = model.reader.answer(gap, with: a)
-        busy = false
-        done(msg ?? (a.isEmpty ? "Skipped" : "Answer saved"))
     }
 }

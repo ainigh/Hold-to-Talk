@@ -1,7 +1,7 @@
 import Harness
 import SwiftUI
 
-/// Every file the night wrote, in the window's second column when Notes is chosen.
+/// Every file the reader wrote, in the window's second column when Notes is chosen.
 struct NotesFileList: View {
     let model: AppModel
 
@@ -17,7 +17,7 @@ struct NotesFileList: View {
                 if reader.folder == nil {
                     Text("Choose a folder to see its files.").foregroundStyle(.secondary)
                 } else if reader.files.isEmpty {
-                    Text("The folder is empty. Add text and run a night.").foregroundStyle(.secondary)
+                    Text("The folder is empty. Record something, or paste text into the stream; the reader writes its notes here.").foregroundStyle(.secondary)
                 }
                 ForEach(groups) { g in
                     Section(g.id) {
@@ -60,7 +60,7 @@ struct NotesFileList: View {
     }
 }
 
-/// The note file chosen in the list, to read and edit. The morning reads whatever is here.
+/// The note file chosen in the list, to read and edit. Answers are made from whatever is here.
 struct NotesEditor: View {
     let model: AppModel
     @StateObject private var flash = FlashState()

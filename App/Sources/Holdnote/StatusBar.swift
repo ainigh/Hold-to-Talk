@@ -6,8 +6,8 @@ import Observation
 /// on some Macs). A click shows or hides the window, which holds everything the old menu did; a
 /// right-click (or ⌃-click) offers only Show/Hide and Quit, so the app can always be quit from
 /// here. The glyph says what the app is doing: a waveform at rest, a red dot while recording, a
-/// tiny equalizer while transcribing, a warning when the hotkey can't be seen, an arrow when an
-/// update waits.
+/// tiny equalizer while transcribing, glasses while the reader reads, a warning when the hotkey
+/// can't be seen, an arrow when an update waits.
 @MainActor
 final class StatusBarController: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -40,7 +40,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         if recording || speaking { symbol = "record.circle.fill" }
         else if listening { symbol = "ear.fill" }
         else if transcribing { symbol = "waveform.badge.magnifyingglass" }
-        else if reading { symbol = "moon.fill" }
+        else if reading { symbol = "eyeglasses" }
         else if update { symbol = "arrow.down.circle" }
         else if warning { symbol = "waveform.slash" }
         else { symbol = "waveform" }

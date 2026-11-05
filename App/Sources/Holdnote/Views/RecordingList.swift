@@ -91,7 +91,7 @@ struct RecordingList: View {
     }
 
     private func item(_ r: Recording) -> some View {
-        RecordingRow(recording: r, progress: model.library.transcribing == r.id ? model.library.transcribingProgress : nil, showDay: custom)
+        RecordingRow(recording: r, progress: model.library.transcribing == r.id ? model.library.transcribingProgress : nil, showDay: custom, reader: model.reader.rowMark(for: r))
             .tag(r.id)
             .contextMenu { rowMenu(r) }
     }
@@ -130,6 +130,8 @@ struct RecordingRow: View {
     let progress: Double?
     /// The date as well as the time (in your own order there are no day sections to say it).
     var showDay = false
+    /// What the reader has to say about it.
+    var reader: ReaderController.RowMark? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -159,9 +161,33 @@ struct RecordingRow: View {
                 .lineLimit(1)
             }
             Spacer(minLength: 0)
+            readerMark
             status
         }
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var readerMark: some View {
+        switch reader {
+        case let .questions(n):
+            HStack(spacing: 2) {
+                Image(systemName: "questionmark.bubble.fill")
+                Text("\(n)")
+            }
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Color.accentColor)
+            .padding(.top, 2)
+            .help("The reader has \(n) question\(n == 1 ? "" : "s") about this recording")
+        case .edited:
+            Image(systemName: "pencil.circle").font(.system(size: 11)).foregroundStyle(.orange).padding(.top, 2)
+                .help("Edited after it joined the reader's stream; the reader still has the earlier words")
+        case .waiting, .unread:
+            Image(systemName: "eyeglasses").font(.system(size: 10)).foregroundStyle(.tertiary).padding(.top, 3)
+                .help(reader == .waiting ? "Joins the reader's stream soon" : "In the reader's stream, not read yet")
+        case nil:
+            EmptyView()
+        }
     }
 
     @ViewBuilder
