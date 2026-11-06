@@ -17,7 +17,7 @@ public enum WAVRepair {
             throw Problem("not a WAV file")
         }
         var fixed = false
-        let riffSize = UInt32(size - 8)
+        let riffSize = UInt32(min(size - 8, UInt64(UInt32.max)))
         if head.uint32(at: 4) != riffSize {
             try handle.seek(toOffset: 4)
             try handle.write(contentsOf: riffSize.littleEndianData)

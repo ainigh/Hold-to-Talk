@@ -97,7 +97,7 @@ struct MainWindow: View {
         Binding(get: { model.selection != [AppModel.goalsID] && (model.showingAll || model.selection.isEmpty || model.selection.contains(AppModel.allID)) },
                 set: { on in
                     if on { model.showWholeStream() }
-                    else { model.showingAll = false; if model.selection.isEmpty, let first = model.listed.first { model.selection = [first.id] } }
+                    else { model.showingAll = false; if model.selection.isEmpty || model.selection.contains(AppModel.allID), let first = model.listed.first { model.selection = [first.id] } }
                 })
     }
 

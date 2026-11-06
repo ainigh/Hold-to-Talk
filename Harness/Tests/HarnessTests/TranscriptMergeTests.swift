@@ -47,6 +47,14 @@ final class TranscriptMergeTests: XCTestCase {
         XCTAssertTrue(merged.hasPrefix("the dog"), merged)
     }
 
+    func testCaseAndPunctuationEditsSurvive() {
+        XCTAssertEqual(TranscriptMerge.reapply(edits: "We met Jon.", from: "we met jon", onto: "we met jon today"), "We met Jon. today")
+    }
+
+    func testAddedParagraphBreakSurvives() {
+        XCTAssertEqual(TranscriptMerge.reapply(edits: "one two\n\nthree four", from: "one two three four", onto: "one two three four five"), "one two\n\nthree four five")
+    }
+
     func testParagraphsKept() {
         let old = "one two\n\nthree four"
         let user = "one two\n\nthree four\n\nfive"

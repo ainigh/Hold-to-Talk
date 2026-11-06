@@ -82,7 +82,7 @@ public struct Settings: Codable, Equatable, Sendable {
     /// Languages for the pin list (whisper's codes).
     public static let languages: [(code: String, title: String)] = [
         ("auto", "Detect automatically"), ("en", "English"), ("de", "German"), ("fr", "French"), ("es", "Spanish"),
-        ("it", "Italian"), ("pt", "Portuguese"), ("nl", "Dutch"), ("sv", "Swedish"), ("da", "Danish"), ("nb", "Norwegian"),
+        ("it", "Italian"), ("pt", "Portuguese"), ("nl", "Dutch"), ("sv", "Swedish"), ("da", "Danish"), ("no", "Norwegian"),
         ("fi", "Finnish"), ("pl", "Polish"), ("ru", "Russian"), ("uk", "Ukrainian"), ("tr", "Turkish"), ("ar", "Arabic"),
         ("hi", "Hindi"), ("ja", "Japanese"), ("ko", "Korean"), ("zh", "Chinese"),
     ]

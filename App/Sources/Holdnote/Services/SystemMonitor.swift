@@ -33,7 +33,8 @@ final class SystemMonitor {
         let cores = ProcessInfo.processInfo.activeProcessorCount
         var systemCPU = sample?.systemCPU ?? 0
         if let ticks = Self.cpuTicks() {
-            if let last = lastTicks, ticks.total > last.total {
+            // A counter that wrapped (a Mac up for months) is skipped for one sample, not a crash.
+            if let last = lastTicks, ticks.total > last.total, ticks.busy >= last.busy {
                 systemCPU = Double(ticks.busy - last.busy) / Double(ticks.total - last.total)
             }
             lastTicks = ticks
@@ -63,10 +64,11 @@ final class SystemMonitor {
         let states = Int(CPU_STATE_MAX)
         for cpu in 0..<Int(cpuCount) {
             let base = cpu * states
-            let user = UInt64(info[base + Int(CPU_STATE_USER)])
-            let system = UInt64(info[base + Int(CPU_STATE_SYSTEM)])
-            let nice = UInt64(info[base + Int(CPU_STATE_NICE)])
-            let idle = UInt64(info[base + Int(CPU_STATE_IDLE)])
+            // The counters are 32-bit and wrap: read as unsigned, never as a negative number (which traps).
+            let user = UInt64(UInt32(bitPattern: info[base + Int(CPU_STATE_USER)]))
+            let system = UInt64(UInt32(bitPattern: info[base + Int(CPU_STATE_SYSTEM)]))
+            let nice = UInt64(UInt32(bitPattern: info[base + Int(CPU_STATE_NICE)]))
+            let idle = UInt64(UInt32(bitPattern: info[base + Int(CPU_STATE_IDLE)]))
             busy += user + system + nice
             total += user + system + nice + idle
         }

@@ -175,7 +175,8 @@ final class WhisperTranscriber: @unchecked Sendable {
             return Unmanaged<Flag>.fromOpaque(data).takeUnretainedValue().isOn
         }
         params.abort_callback_user_data = Unmanaged.passUnretained(cancelFlag).toOpaque()
-        let language = options.language.isEmpty ? "auto" : options.language
+        // "nb" was this app's old code for Norwegian; whisper.cpp knows it as "no".
+        let language = options.language.isEmpty ? "auto" : (options.language == "nb" ? "no" : options.language)
         let prompt = options.prompt
         let tally = ProgressTally(ranges: ranges, rate: Recorder.modelRate, atOnce: atOnce, report: progress)
         tally.announce()
@@ -222,7 +223,7 @@ final class WhisperTranscriber: @unchecked Sendable {
                                 guard !text.isEmpty, !Self.isNoise(text) else { continue }
                                 segments.append(Recording.Segment(start: offset + t0, end: offset + t1, text: text))
                             }
-                            let found = String(cString: whisper_lang_str(whisper_full_lang_id_from_state(state)))
+                            let found = whisper_lang_str(whisper_full_lang_id_from_state(state)).map { String(cString: $0) } ?? language
                             return .done(segments, language: found)
                         }
                         collector.set(i, outcome)

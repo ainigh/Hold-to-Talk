@@ -108,7 +108,7 @@ struct SetupView: View {
             do {
                 try await transcriber.download(name) { p in Task { @MainActor in downloading = p ?? 0 } }
                 downloading = nil
-                hasModel = true
+                hasModel = transcriber.hasModel(model.settings.settings.model)
             } catch {
                 downloading = nil
                 downloadProblem = error.localizedDescription

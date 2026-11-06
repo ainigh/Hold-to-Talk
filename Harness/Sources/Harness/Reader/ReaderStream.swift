@@ -39,8 +39,13 @@ public enum ReaderStream {
     @discardableResult
     public static func append(_ text: String, to folder: NotesFolder, source: String? = nil, hash: String? = nil, kind: String? = nil, now: Date = Date()) throws -> [Sentence] {
         var count = 0
+        // sentences.txt is yours to edit: new ids follow the highest one there (a deleted line
+        // must not make the next sentence reuse an id), on a line of their own.
+        var joint = ""
         if let existing = folder.read("sentences.txt"), !existing.isEmpty {
-            count = Sentences.parse(existing).count
+            let parsed = Sentences.parse(existing)
+            count = parsed.compactMap { Sentences.number($0.id) }.max() ?? parsed.count
+            if !existing.hasSuffix("\n") { joint = "\n" }
         } else if let raw = folder.read("stream.txt"), !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let first = Sentences.split(raw)
             try folder.write("sentences.txt", Sentences.format(first))
@@ -49,7 +54,7 @@ public enum ReaderStream {
         let added = Sentences.split(text, startIndex: count)
         guard !added.isEmpty else { return [] }
         try folder.append("stream.txt", (count > 0 ? "\n\n" : "") + text.trimmingCharacters(in: .whitespacesAndNewlines) + "\n")
-        try folder.append("sentences.txt", Sentences.format(added))
+        try folder.append("sentences.txt", joint + Sentences.format(added))
         var adds = folder.readJSON("additions.json", as: [Addition].self) ?? []
         adds.append(Addition(added: ISO8601DateFormatter().string(from: now), from: added[0].id, to: added[added.count - 1].id, sentences: added.count, source: source, hash: hash, kind: kind))
         try folder.writeJSON("additions.json", adds)

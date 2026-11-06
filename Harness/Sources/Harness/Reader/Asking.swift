@@ -248,7 +248,7 @@ public enum Asking {
             if options.coolOffSec > 0 {
                 let until = Date().addingTimeInterval(Double(options.coolOffSec))
                 while Date() < until, !options.stopped() {
-                    try await Task.sleep(nanoseconds: UInt64(min(1, until.timeIntervalSinceNow) * 1e9))
+                    try await Task.sleep(nanoseconds: UInt64(min(1, max(0.01, until.timeIntervalSinceNow)) * 1e9))
                 }
                 if options.stopped() { throw ReaderError.cancelled }
             }

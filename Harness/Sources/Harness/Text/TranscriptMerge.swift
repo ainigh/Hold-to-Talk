@@ -38,8 +38,18 @@ public enum TranscriptMerge {
         }
         for op in ops {
             switch op {
-            case let .keep(oldI, _):
-                if let p = mapping[oldI], p >= newIndex { catchUp(to: p + 1) }
+            case let .keep(oldI, userI):
+                guard let p = mapping[oldI], p >= newIndex else { break }
+                // The same word to the diff, but you may have changed its case, its punctuation
+                // or the break before it ("jon" to "Jon."): then yours stands, not the machine's.
+                let mine = userWords[userI], was = oldWords[oldI]
+                if mine.text != was.text || mine.gap != was.gap {
+                    catchUp(to: p)
+                    out.append(mine)
+                    newIndex = p + 1
+                } else {
+                    catchUp(to: p + 1)
+                }
             case let .delete(oldI):
                 if let p = mapping[oldI] {
                     // Emit everything before it, then skip it.

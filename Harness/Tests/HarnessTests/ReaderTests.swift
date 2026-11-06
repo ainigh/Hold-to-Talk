@@ -31,6 +31,7 @@ final class ReaderTests: XCTestCase {
         XCTAssertEqual(Sentences.normId("s42"), "s00042")
         XCTAssertNil(Sentences.normId("x42"))
         XCTAssertEqual(Sentences.idList("s00012, s13 and 7"), ["s00012", "s00013", "s00007"])
+        XCTAssertEqual(Sentences.idList("Lisbon 3 times since 2023 (s00012).", prefixed: true), ["s00012"])
         let s = Sentences.split("First one. Second one!  Third?\n\nA \"quoted.\" Then more… and the end", startIndex: 2)
         XCTAssertEqual(s.map(\.id), ["s00003", "s00004", "s00005", "s00006", "s00007", "s00008"])
         XCTAssertEqual(s[0].text, "First one.")
@@ -109,6 +110,12 @@ final class ReaderTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: g.root) }
         try g.write("stream.txt", "Old one. Old two.")
         XCTAssertEqual(try ReaderStream.append("New.", to: g).map(\.id), ["s00003"])
+        // sentences.txt edited by hand (a line deleted, no newline at the end): ids are never reused.
+        let h = try temp()
+        defer { try? FileManager.default.removeItem(at: h.root) }
+        try h.write("sentences.txt", "s00001\tOne.\ns00003\tThree.")
+        XCTAssertEqual(try ReaderStream.append("Four.", to: h).map(\.id), ["s00004"])
+        XCTAssertEqual(ReaderStream.sentences(in: h).map(\.id), ["s00001", "s00003", "s00004"])
     }
 
     /// A reply for every lens a call names: its label is "<lens>+<lens>… <first id>".

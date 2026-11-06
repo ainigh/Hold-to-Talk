@@ -32,6 +32,24 @@ final class VectorStoreTests: XCTestCase {
         XCTAssertThrowsError(try again.append([(6, [1, 2])], to: f))
     }
 
+    func testHalfWrittenRecordIsCutOff() throws {
+        let f = try folder()
+        var store = VectorStore(model: "test", dim: 3)
+        try store.append([(1, [1, 0, 0])], to: f)
+        // A crash mid-append leaves part of a record.
+        let u = try XCTUnwrap(f.url(VectorStore.file))
+        let handle = try FileHandle(forWritingTo: u)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data([9, 9, 9, 9, 9]))
+        try handle.close()
+        var again = try XCTUnwrap(VectorStore.load(from: f, model: "test"))
+        XCTAssertEqual(again.count, 1)
+        try again.append([(2, [0, 1, 0])], to: f)
+        let reloaded = try XCTUnwrap(VectorStore.load(from: f, model: "test"))
+        XCTAssertEqual(reloaded.count, 2)
+        XCTAssertEqual(reloaded.search([0, 1, 0], top: 1).map(\.n), [2])
+    }
+
     func testEmptyAndMissingFolder() throws {
         let f = try folder()
         XCTAssertNil(VectorStore.load(from: f, model: "test"))

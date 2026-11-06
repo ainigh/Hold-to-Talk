@@ -31,9 +31,13 @@ struct LensList: View {
                 .controlSize(.small)
             }
             ForEach(Array(reader.lenses.enumerated()), id: \.element.id) { idx, lens in
-                LensRow(model: model, lens: lens, index: idx, isOpen: open.contains(lens.id)) { on in
+                LensRow(model: model, lens: lens, index: idx, isOpen: open.contains(lens.id), setOpen: { on in
                     if on { open.insert(lens.id) } else { open.remove(lens.id) }
-                }
+                }, rename: { title in
+                    // A lens of your own follows its title, so its id can change: it stays open.
+                    let new = reader.rename(lens.id, to: title)
+                    if new != lens.id, open.remove(lens.id) != nil { open.insert(new) }
+                })
             }
         }
     }
@@ -45,12 +49,33 @@ struct LensRow: View {
     let index: Int
     let isOpen: Bool
     let setOpen: (Bool) -> Void
+    let rename: (String) -> Void
+    /// What you are typing in Name and Reads, applied on Return or when you leave the field:
+    /// a rename changes a lens's id (and so its row), and Reads is parsed, so neither can follow each keystroke.
+    @State private var nameDraft: String?
+    @State private var readsDraft: String?
+    @FocusState private var field: Field?
+    private enum Field { case name, reads }
 
     private var reader: ReaderController { model.reader }
 
     private func binding<T>(_ keyPath: WritableKeyPath<Lens, T>) -> Binding<T> {
         Binding(get: { reader.lenses.first { $0.id == lens.id }?[keyPath: keyPath] ?? lens[keyPath: keyPath] },
                 set: { v in if let i = reader.lenses.firstIndex(where: { $0.id == lens.id }) { reader.lenses[i][keyPath: keyPath] = v } })
+    }
+
+    private func commitName() {
+        guard let title = nameDraft else { return }
+        nameDraft = nil
+        if title != lens.title { rename(title) }
+    }
+
+    private func commitReads() {
+        guard let v = readsDraft else { return }
+        readsDraft = nil
+        if let i = reader.lenses.firstIndex(where: { $0.id == lens.id }) {
+            reader.lenses[i].reads = v.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        }
     }
 
     var body: some View {
@@ -82,10 +107,15 @@ struct LensRow: View {
             if isOpen {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 12) {
-                        TextField("Name", text: Binding(get: { lens.title }, set: { reader.rename(lens.id, to: $0) })).frame(maxWidth: 220)
+                        TextField("Name", text: Binding(get: { nameDraft ?? lens.title }, set: { nameDraft = $0 }))
+                            .focused($field, equals: .name)
+                            .onSubmit(commitName)
+                            .frame(maxWidth: 220)
                         TextField("Reads the notebooks of (lens ids, comma separated)", text: Binding(
-                            get: { reader.lenses.first { $0.id == lens.id }?.reads.joined(separator: ", ") ?? "" },
-                            set: { v in if let i = reader.lenses.firstIndex(where: { $0.id == lens.id }) { reader.lenses[i].reads = v.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } } }))
+                            get: { readsDraft ?? (reader.lenses.first { $0.id == lens.id }?.reads.joined(separator: ", ") ?? "") },
+                            set: { readsDraft = $0 }))
+                            .focused($field, equals: .reads)
+                            .onSubmit(commitReads)
                         Toggle("carries a notebook", isOn: binding(\.carry)).font(.system(size: 12))
                     }
                     if !problems.isEmpty { Text(problems.joined(separator: "; ") + ". Ids are shown at the bottom of each lens.").font(.system(size: 11)).foregroundStyle(.orange) }
@@ -106,5 +136,10 @@ struct LensRow: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(lens.on ? 0.4 : 0.2)))
+        .onChange(of: field) { old, _ in
+            if old == .name { commitName() }
+            if old == .reads { commitReads() }
+        }
+        .onDisappear { commitName(); commitReads() }
     }
 }

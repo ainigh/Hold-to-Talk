@@ -75,7 +75,14 @@ public struct VectorStore: Sendable {
         }
         if !fresh, let handle = try? FileHandle(forWritingTo: u) {
             defer { try? handle.close() }
-            try handle.seekToEnd()
+            // A record half written (a crash, a full disk) is cut off first, or every record
+            // after it would be read shifted.
+            let record = UInt64(4 + dim * 4)
+            let size = try handle.seekToEnd()
+            if size >= 4 {
+                let clean = 4 + (size - 4) / record * record
+                if clean != size { try handle.truncate(atOffset: clean); try handle.seekToEnd() }
+            }
             try handle.write(contentsOf: data)
         } else {
             try data.write(to: u, options: .atomic)

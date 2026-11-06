@@ -84,7 +84,13 @@ final class Library {
             enqueue(r.id)
         }
         // Transcripts that never finished (the app quit) are run again; one you stopped waits for Retry.
+        // A recording cut off mid-way (the app crashed, the Mac lost power) has a header that says
+        // it is empty: fixed first, or it would neither play nor transcribe.
         for r in recordings where r.status == .failed && r.text.isEmpty && r.audioFile != nil && r.failure != WhisperTranscriber.Problem.cancelled.errorDescription {
+            if let url = store.audioURL(for: r), (try? WAVRepair.repair(url)) == true,
+               let i = index(r.id), let duration = AudioDecoder.duration(url) {
+                recordings[i].duration = duration
+            }
             retranscribe(r.id)
         }
     }
@@ -104,16 +110,18 @@ final class Library {
     /// Every recording, its audio and your own order go to the Trash in one folder, and the list
     /// starts empty. The speech models stay. Returns where the old ones went.
     func reset() throws -> URL? {
+        // What you typed goes with the rest (saved first); pending deletes are still on disk and go too.
+        saveNow()
         deleteTimer?.invalidate(); deleteTimer = nil
         pendingDeletes = []
-        for t in saveTimers.values { t.invalidate() }
-        saveTimers = [:]
-        // A transcript in flight finds its recording gone and is dropped.
+        // The transcript in flight is stopped, finds its recording gone and is dropped.
         queue = []
         samplesInMemory = [:]
+        if transcribing != nil { transcriber.cancel() }
+        // Even if moving fails part way, new recordings must have somewhere to go.
+        defer { for d in [store.recordingsFolder, store.audioFolder] { try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true) } }
         let where_ = try StartOver.trash([store.recordingsFolder, store.audioFolder, store.root.appendingPathComponent("order.json")],
                                          named: "Holdnote recordings", in: store.root)
-        for d in [store.recordingsFolder, store.audioFolder] { try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true) }
         recordings = []
         order = []
         loadProblems = []
@@ -236,7 +244,8 @@ final class Library {
     // MARK: - Transcribing
 
     func retranscribe(_ id: UUID) {
-        guard let i = index(id), recordings[i].audioFile != nil else { return }
+        // Already waiting or running: a second run would only redo the same work.
+        guard let i = index(id), recordings[i].audioFile != nil, transcribing != id, !queue.contains(where: { $0.id == id }) else { return }
         recordings[i].status = .transcribing
         recordings[i].failure = nil
         try? store.save(recordings[i])
@@ -396,9 +405,14 @@ final class Library {
     func undoDelete() {
         deleteTimer?.invalidate()
         deleteTimer = nil
-        recordings += pendingDeletes
+        let restored = pendingDeletes
+        recordings += restored
         recordings.sort { $0.createdAt > $1.createdAt }
         pendingDeletes = []
+        // Deleting took them out of the queue (or stopped them): back they go, or they would wait forever.
+        for r in restored where r.status == .transcribing && transcribing != r.id && !queue.contains(where: { $0.id == r.id }) {
+            enqueue(r.id)
+        }
     }
 
     func commitDeletes() {

@@ -31,6 +31,9 @@ final class HotkeyMonitor {
 
     nonisolated static let fnKeyCode: Int64 = 63
     nonisolated static let rightOptionKeyCode: Int64 = 61
+    /// The device-dependent bits of an event's flags that tell the two Option keys apart (IOKit's NX_DEVICELALTKEYMASK, NX_DEVICERALTKEYMASK).
+    nonisolated static let leftOptionDeviceBit: UInt64 = 0x20
+    nonisolated static let rightOptionDeviceBit: UInt64 = 0x40
     nonisolated static let spaceKeyCode: Int64 = 49
     nonisolated static let hKeyCode: Int64 = 4
 
@@ -105,12 +108,19 @@ final class HotkeyMonitor {
             set(down: flags.contains(.maskSecondaryFn), flags: flags)
         case .rightOption:
             guard type == .flagsChanged, keyCode == Self.rightOptionKeyCode else { return }
-            set(down: flags.contains(.maskAlternate), flags: flags)
+            // The key is itself an Option key: its own device bit says whether it is down, and only
+            // the left Option held as well means "append" (or every recording would append).
+            var mods = flags
+            if flags.rawValue & Self.leftOptionDeviceBit == 0 { mods.remove(.maskAlternate) }
+            // (A remapped or virtual keyboard may send no device bits: then Option alone decides, as before.)
+            let deviceBits = flags.rawValue & (Self.leftOptionDeviceBit | Self.rightOptionDeviceBit)
+            set(down: flags.contains(.maskAlternate) && (deviceBits == 0 || flags.rawValue & Self.rightOptionDeviceBit != 0), flags: mods)
         case .controlOptionSpace:
             guard keyCode == Self.spaceKeyCode else { return }
             if type == .keyDown {
                 guard event.getIntegerValueField(.keyboardEventAutorepeat) == 0 else { return }
-                if flags.contains(.maskControl), flags.contains(.maskAlternate) { set(down: true, flags: flags) }
+                // Option is part of this hotkey, so it can't also mean "append".
+                if flags.contains(.maskControl), flags.contains(.maskAlternate) { set(down: true, flags: flags.subtracting(.maskAlternate)) }
             } else if type == .keyUp {
                 set(down: false, flags: flags)
             }

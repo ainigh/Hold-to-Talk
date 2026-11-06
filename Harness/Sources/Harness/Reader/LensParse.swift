@@ -201,13 +201,13 @@ public enum LensParse {
                     body.append(raw)
                 }
                 let answer = body.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-                let ev = evidence.map { Array(NSOrderedSet(array: $0)) as! [String] } ?? Sentences.idList(answer)
+                let ev = evidence.map { Array(NSOrderedSet(array: $0)) as! [String] } ?? Sentences.idList(answer, prefixed: true)
                 return .answer(text: answer, evidence: ev, why: why, implied: false)
             }
         }
         let answer = clean(text).trimmingCharacters(in: .whitespacesAndNewlines)
         if answer.isEmpty { return .none(why: why) }
-        return .answer(text: answer, evidence: Sentences.idList(answer), why: why, implied: true)
+        return .answer(text: answer, evidence: Sentences.idList(answer, prefixed: true), why: why, implied: true)
     }
 
     /// "KEY: value" (any case) → value.

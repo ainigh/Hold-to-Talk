@@ -11,6 +11,8 @@ struct TranscriptView: View {
     let model: AppModel
     let recording: Recording
     @State private var text: String
+    /// The library's text as last shown here: what you have typed is what differs from it.
+    @State private var synced: String
     @FocusState private var editing: Bool
     @AppStorage(SidePanel.key) private var side = SidePanel.reader.rawValue
 
@@ -18,6 +20,7 @@ struct TranscriptView: View {
         self.model = model
         self.recording = recording
         _text = State(initialValue: recording.text)
+        _synced = State(initialValue: recording.text)
     }
 
     private var live: Recording { model.library.recording(recording.id) ?? recording }
@@ -42,7 +45,7 @@ struct TranscriptView: View {
         .onChange(of: live.text) { _, new in
             // A transcript landing from the transcriber (or a merge) replaces what's shown,
             // unless you are mid-edit of the same text.
-            if new != text, !editing || text == recording.text { text = new }
+            if new != text, !editing || text == synced { text = new; synced = new }
         }
         .onChange(of: text) { _, new in model.library.setText(new, of: recording.id) }
         // "Ask the reader about it": the conversation beside this text, its field focused.

@@ -13,7 +13,8 @@ permissions:
 # A newer push to the same branch replaces a run still going.
 concurrency:
   group: build-${{ github.ref }}
-  cancel-in-progress: true
+  # A run on main publishes a release: cancelling it part way could leave a release without its zip.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # The harness (the hold gesture, recordings, transcript text, the updater's logic), on Linux

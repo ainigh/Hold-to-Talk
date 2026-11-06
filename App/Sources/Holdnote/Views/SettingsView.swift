@@ -153,6 +153,8 @@ struct TranscriptionSettings: View {
                             try? FileManager.default.removeItem(at: model.library.transcriber.modelURL(settings.model))
                             hasModel = false
                         }
+                        .disabled(model.library.transcribing != nil)
+                        .help(model.library.transcribing != nil ? "Wait for the transcription to finish (or stop it) first" : "")
                     } else if let downloading {
                         ProgressView(value: downloading).frame(width: 160)
                         Text("\(Int(downloading * 100))%").font(.caption).foregroundStyle(.secondary)
@@ -215,7 +217,7 @@ struct TranscriptionSettings: View {
                     Task { @MainActor in downloading = p ?? 0 }
                 }
                 downloading = nil
-                hasModel = true
+                hasModel = transcriber.hasModel(settings.model)
             } catch {
                 downloading = nil
                 downloadProblem = error.localizedDescription

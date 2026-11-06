@@ -603,7 +603,12 @@ final class ReaderController {
             var finished = false
             var problem: String?
             do { finished = try await Reading.run(folder: folder, config: cfg, lenses: lenses, goals: goals, chat: chat, control: ctl) }
-            catch { problem = (error as? ReaderError)?.message ?? error.localizedDescription }
+            catch {
+                // Stop now while resting between calls cancels the sleep: a stop, not a failure.
+                if !(error is CancellationError || (error as? ReaderError)?.cancelled == true) {
+                    problem = (error as? ReaderError)?.message ?? error.localizedDescription
+                }
+            }
             await MainActor.run { self?.readingEnded(finished: finished, problem: problem) }
         }
     }
@@ -883,15 +888,18 @@ final class ReaderController {
     }
 
     /// A lens of the user's own follows its title; a default lens keeps its id (and its file).
-    func rename(_ id: String, to title: String) {
-        guard let i = lenses.firstIndex(where: { $0.id == id }) else { return }
+    /// Returns the lens's id afterwards.
+    @discardableResult
+    func rename(_ id: String, to title: String) -> String {
+        guard let i = lenses.firstIndex(where: { $0.id == id }) else { return id }
         lenses[i].title = title
-        guard !Lens.defaults.contains(where: { $0.id == id }) else { return }
+        guard !Lens.defaults.contains(where: { $0.id == id }) else { return id }
         let newId = uniqueLensId(Lens.slug(title), except: id)
         if newId != id {
             lenses[i].id = newId
             for j in lenses.indices { lenses[j].reads = lenses[j].reads.map { $0 == id ? newId : $0 } }
         }
+        return newId
     }
 
     func move(_ id: String, by delta: Int) {

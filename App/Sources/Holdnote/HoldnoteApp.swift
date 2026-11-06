@@ -98,8 +98,17 @@ func confirmResetEverything(_ model: AppModel) {
 
 /// Starts what belongs to the running app (not to previews): the menu bar icon, the hotkey, the updater.
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var quitSignal: DispatchSourceSignal?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated { AppModel.shared.start() }
+        // install.sh (and so the updater) closes the app with SIGTERM: quit as if from the menu,
+        // so a recording in progress is finished and pending edits and deletes are written.
+        signal(SIGTERM, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        source.setEventHandler { NSApp.terminate(nil) }
+        source.resume()
+        quitSignal = source
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -409,6 +418,8 @@ final class AppModel {
         reader.disarmVoiceAnswer()
         reader.whenIdle { [weak self] in
             guard let self else { return }
+            // The reader may have taken a while to finish its call: a recording begun since is kept.
+            guard !self.capture.isRecording else { self.tell("Nothing was reset", "A recording started while Holdnote waited for the reader. Stop it and reset again."); return }
             var lines: [String] = []
             do { lines.append("Recordings: " + StartOver.whereItWent(try self.library.reset())) }
             catch { lines.append("Recordings could not be moved: \(error.localizedDescription)") }

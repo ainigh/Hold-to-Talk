@@ -150,7 +150,16 @@ final class CaptureController {
         isRecording = false
         self.recorder = nil
         self.current = nil
-        if isListening { try? listener.start(deviceUID: settings.settings.inputDeviceID) }
+        var relistenFailure: Error?
+        if isListening {
+            do { try listener.start(deviceUID: settings.settings.inputDeviceID) } catch { relistenFailure = error }
+        }
+        defer {
+            if let relistenFailure {
+                setListening(false)
+                hud.showFailure("Voice Detection stopped: \(relistenFailure.localizedDescription)")
+            }
+        }
         if keep {
             if settings.settings.sounds { Sounds.stop() }
             library.finish(current.id, duration: recorder.seconds, device: recorder.deviceName, samples: recorder.allSamples(), appendTo: current.appendTo)

@@ -32,14 +32,15 @@ public enum Sentences {
         return makeId(n)
     }
 
-    /// Every id-like token in a string, in order, without repeats.
-    public static func idList(_ s: String) -> [String] {
+    /// Every id-like token in a string, in order, without repeats. With `prefixed`, only numbers
+    /// written as ids ("s00012"): in prose, "3 times since 2023" cites nothing.
+    public static func idList(_ s: String, prefixed: Bool = false) -> [String] {
         var out: [String] = []
         var seen = Set<String>()
         var digits = ""
         var sawS = false
         func flush() {
-            if !digits.isEmpty, digits.count <= 7, let n = Int(digits) {
+            if !digits.isEmpty, digits.count <= 7, !prefixed || sawS, let n = Int(digits) {
                 let id = makeId(n)
                 if !seen.contains(id) { seen.insert(id); out.append(id) }
             }
@@ -51,7 +52,6 @@ public enum Sentences {
             sawS = ch == "s" || ch == "S"
         }
         flush()
-        _ = sawS
         return out
     }
 

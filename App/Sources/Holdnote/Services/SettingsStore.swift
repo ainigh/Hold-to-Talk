@@ -17,6 +17,9 @@ final class SettingsStore {
 
     init() {
         if let data = UserDefaults.standard.data(forKey: Self.key), let s = try? JSONDecoder().decode(Settings.self, from: data) {
+            var s = s
+            // Norwegian was saved as "nb", a code whisper.cpp doesn't know; it is "no".
+            if s.language == "nb" { s.language = "no" }
             settings = s
         } else {
             settings = Settings()
